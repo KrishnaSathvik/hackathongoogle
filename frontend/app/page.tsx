@@ -329,6 +329,12 @@ export default function TrailNarratorPage() {
           );
         };
 
+        // Track image results for auto-publish
+        let pastImg: string | null = null;
+        let pastCap = "";
+        let futureImg: string | null = null;
+        let futureCap = "";
+
         // ── Phase 2: Past image (fire immediately, 3 min timeout) ──
         try {
           const pastRes = await fetch(`${API_URL}/api/generate-past-image`, {
@@ -343,6 +349,8 @@ export default function TrailNarratorPage() {
           });
           if (pastRes.ok) {
             const pastData = await pastRes.json();
+            pastImg = pastData.image;
+            pastCap = pastData.caption;
             updateEntry({
               timeTravelImage: pastData.image,
               timeTravelCaption: pastData.caption,
@@ -373,6 +381,8 @@ export default function TrailNarratorPage() {
           });
           if (futureRes.ok) {
             const futureData = await futureRes.json();
+            futureImg = futureData.image;
+            futureCap = futureData.caption;
             updateEntry({
               futureImage: futureData.image,
               futureCaption: futureData.caption,
@@ -391,23 +401,6 @@ export default function TrailNarratorPage() {
 
         // ── Auto-publish to public gallery ──
         try {
-          // Read latest story state to get images
-          let pastImg: string | null = null;
-          let pastCap = "";
-          let futureImg: string | null = null;
-          let futureCap = "";
-          setStory((prev) => {
-            const found = prev.find(
-              (s) => s.type === "narration" && s.data.id === entryId
-            );
-            if (found?.type === "narration") {
-              pastImg = found.data.timeTravelImage;
-              pastCap = found.data.timeTravelCaption;
-              futureImg = found.data.futureImage;
-              futureCap = found.data.futureCaption;
-            }
-            return prev;
-          });
           await fetch(`${API_URL}/api/stories`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
