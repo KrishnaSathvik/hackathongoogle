@@ -757,7 +757,6 @@ export default function TrailNarratorPage() {
         ref={fileInputRef}
         type="file"
         accept="image/*"
-        capture="environment"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -1223,13 +1222,23 @@ function WelcomeScreen({
       {/* Action buttons */}
       {!isLoading && (
         <div className="flex gap-3 mt-5">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex-1 h-12 bg-[#2c6b3e] hover:bg-[#245633] text-white rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition-colors shadow-sm btn-lift"
+          <label
+            className="flex-1 h-12 bg-[#2c6b3e] hover:bg-[#245633] text-white rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition-colors shadow-sm btn-lift cursor-pointer"
           >
             <Camera className="w-4 h-4" />
             Take Photo
-          </button>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) onUpload(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
           <button
             onClick={() => fileInputRef.current?.click()}
             className="flex-1 h-12 bg-white border border-[#e0d0b5] hover:bg-[#f0e8db] text-[#714a34] rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition-colors"
