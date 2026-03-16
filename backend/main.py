@@ -12,7 +12,7 @@ from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from agents.narrator import analyze_and_narrate, answer_followup
+from agents.narrator import analyze_and_narrate, answer_followup, identify_and_narrate, generate_past_image, generate_future_image
 
 load_dotenv()
 
@@ -44,9 +44,18 @@ class NarrationResponse(BaseModel):
     session_id: str
     narration: str
     identification: str
-    time_travel_image: str | None
-    time_travel_caption: str
     era: str
+
+
+class ImageGenerationRequest(BaseModel):
+    session_id: str
+    narration: str
+    identification: str
+
+
+class ImageResponse(BaseModel):
+    image: str | None
+    caption: str
 
 
 class FollowUpResponse(BaseModel):
@@ -105,9 +114,9 @@ async def narrate_trail_photo(
     if trail_name:
         trail_context = f"Trail: {trail_name}"
     
-    # Run the narration pipeline
+    # Run the fast narration pipeline (no image generation)
     try:
-        result = await analyze_and_narrate(
+        result = await identify_and_narrate(
             image_bytes=image_bytes,
             trail_context=trail_context,
             previous_narration=previous_narration,
@@ -117,19 +126,47 @@ async def narrate_trail_photo(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Narration failed: {str(e)}")
-    
+
     # Store narration in session
     if session_id in sessions:
         sessions[session_id]["narrations"].append(result["narration"])
-    
+
     return NarrationResponse(
         session_id=session_id,
         narration=result["narration"],
         identification=result["identification"],
-        time_travel_image=result["time_travel_image"],
-        time_travel_caption=result["time_travel_caption"],
         era=result["era"],
     )
+
+
+@app.post("/api/generate-past-image", response_model=ImageResponse)
+async def generate_past_image_endpoint(request: ImageGenerationRequest):
+    """Generate a time-travel (past) image based on narration context."""
+    try:
+        result = await generate_past_image(
+            narration=request.narration,
+            identification=request.identification,
+        )
+    except Exception as e:
+        print(f"Past image generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Past image generation failed: {str(e)}")
+
+    return ImageResponse(image=result["image"], caption=result["caption"])
+
+
+@app.post("/api/generate-future-image", response_model=ImageResponse)
+async def generate_future_image_endpoint(request: ImageGenerationRequest):
+    """Generate a future projection image based on narration context."""
+    try:
+        result = await generate_future_image(
+            narration=request.narration,
+            identification=request.identification,
+        )
+    except Exception as e:
+        print(f"Future image generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Future image generation failed: {str(e)}")
+
+    return ImageResponse(image=result["image"], caption=result["caption"])
 
 
 @app.post("/api/followup", response_model=FollowUpResponse)

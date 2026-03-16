@@ -10,6 +10,8 @@ import {
   VolumeX,
   Send,
   ChevronRight,
+  ArrowRight,
+  ArrowLeft,
   Loader2,
   Mountain,
   Layers,
@@ -18,6 +20,9 @@ import {
   ImagePlus,
   Sparkles,
   X,
+  MapPin,
+  Trash2,
+  Search,
 } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -30,9 +35,13 @@ interface NarrationEntry {
   identification: string;
   timeTravelImage: string | null;
   timeTravelCaption: string;
+  futureImage: string | null;
+  futureCaption: string;
   era: string;
   uploadedImage: string; // base64 data URL of the original photo
   timestamp: Date;
+  pastImageLoading?: boolean;
+  futureImageLoading?: boolean;
 }
 
 interface FollowUpEntry {
@@ -46,6 +55,14 @@ type StoryEntry =
   | { type: "narration"; data: NarrationEntry }
   | { type: "followup"; data: FollowUpEntry };
 
+interface ArchivedSession {
+  id: string;
+  trailName: string;
+  story: StoryEntry[];
+  sessionId: string;
+  savedAt: string;
+}
+
 // ─── Main Page ───────────────────────────────────────────────
 
 export default function TrailNarratorPage() {
@@ -55,19 +72,59 @@ export default function TrailNarratorPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
   const [loadingStep, setLoadingStep] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
   const [isAsking, setIsAsking] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [ttsLoading, setTtsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<{ id: string; message: string }[]>([]);
+  const [view, setView] = useState<"landing" | "explore">("landing");
+  const [archive, setArchive] = useState<ArchivedSession[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const storyEndRef = useRef<HTMLDivElement>(null);
+  const storyEndRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
   const recognitionRef = useRef<any>(null);
 
   const hasStory = story.length > 0;
+
+  const showToast = useCallback((message: string) => {
+    const id = crypto.randomUUID();
+    setToasts((prev) => [...prev, { id, message }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
+  }, []);
+
+  // Restore persisted state on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("trail-narrator-state");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.story?.length) setStory(parsed.story);
+        if (parsed.sessionId) setSessionId(parsed.sessionId);
+        if (parsed.trailName) setTrailName(parsed.trailName);
+      }
+    } catch {}
+    try {
+      const savedArchive = localStorage.getItem("trail-narrator-archive");
+      if (savedArchive) setArchive(JSON.parse(savedArchive));
+    } catch {}
+  }, []);
+
+  // Persist state on every story/session change
+  useEffect(() => {
+    if (story.length > 0 || sessionId) {
+      try {
+        localStorage.setItem(
+          "trail-narrator-state",
+          JSON.stringify({ story, sessionId, trailName })
+        );
+      } catch {}
+    }
+  }, [story, sessionId, trailName]);
 
   // Auto-scroll to latest entry
   useEffect(() => {
@@ -76,17 +133,15 @@ export default function TrailNarratorPage() {
     }
   }, [story]);
 
-  // Loading steps with progress
+  // Loading steps — fast narration path only (images load in background)
   const loadingSteps = [
     { message: "Analyzing your photo", detail: "Identifying landscape and features" },
     { message: "Researching geology", detail: "Matching rock types and formations" },
     { message: "Crafting the narration", detail: "Ranger is writing your story" },
-    { message: "Selecting the best era", detail: "Choosing the most dramatic time period" },
-    { message: "Generating time-travel image", detail: "Painting the ancient landscape" },
   ];
 
-  // Step durations - spread across ~50s so we never outrun the API
-  const stepDurations = [5000, 7000, 10000, 8000, 999999]; // last step never auto-advances
+  // Step durations — spread across ~12s so we don't outrun the fast API
+  const stepDurations = [4000, 5000, 999999]; // last step never auto-advances
 
   useEffect(() => {
     if (!isLoading) {
@@ -113,11 +168,66 @@ export default function TrailNarratorPage() {
     return () => timers.forEach(clearTimeout);
   }, [isLoading]);
 
+  // Elapsed time counter
+  useEffect(() => {
+    if (!isLoading) {
+      setElapsedSeconds(0);
+      return;
+    }
+    setElapsedSeconds(0);
+    const interval = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [isLoading]);
+
+  // ─── Archive Helpers ─────────────────────────────────────────
+
+  const saveToArchive = useCallback(() => {
+    if (story.length === 0) return;
+    // Don't duplicate if this session is already archived
+    if (archive.some((a) => a.sessionId === sessionId)) return;
+    const entry: ArchivedSession = {
+      id: crypto.randomUUID(),
+      trailName,
+      story,
+      sessionId: sessionId || "",
+      savedAt: new Date().toISOString(),
+    };
+    setArchive((prev) => {
+      const updated = [entry, ...prev].slice(0, 20);
+      localStorage.setItem("trail-narrator-archive", JSON.stringify(updated));
+      return updated;
+    });
+  }, [story, trailName, sessionId, archive]);
+
+  const restoreFromArchive = useCallback((entry: ArchivedSession) => {
+    setStory(entry.story);
+    setSessionId(entry.sessionId);
+    setTrailName(entry.trailName);
+  }, []);
+
+  const clearArchive = useCallback(() => {
+    setArchive([]);
+    localStorage.removeItem("trail-narrator-archive");
+  }, []);
+
+  const clearSession = useCallback(() => {
+    saveToArchive();
+    localStorage.removeItem("trail-narrator-state");
+    setStory([]);
+    setSessionId(null);
+    setTrailName("");
+    setPreviewImage(null);
+    setView("landing");
+  }, [saveToArchive]);
+
   // ─── Upload & Narrate ──────────────────────────────────────
 
   const handleImageUpload = useCallback(
     async (file: File) => {
-      if (!file.type.startsWith("image/")) {
+      const isHeic = file.type === "image/heic" || file.type === "image/heif" ||
+        file.name.toLowerCase().endsWith(".heic") || file.name.toLowerCase().endsWith(".heif");
+
+      if (!file.type.startsWith("image/") && !isHeic) {
         setError("Please upload an image file.");
         return;
       }
@@ -125,17 +235,31 @@ export default function TrailNarratorPage() {
       setError(null);
       setIsLoading(true);
 
-      // Create preview and store it for the loading screen
+      // Convert HEIC to JPEG for browser compatibility
+      let displayFile = file;
+      if (isHeic) {
+        try {
+          const heic2any = (await import("heic2any")).default;
+          const blob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.9 });
+          const converted = Array.isArray(blob) ? blob[0] : blob;
+          displayFile = new File([converted], file.name.replace(/\.heic$/i, ".jpg"), { type: "image/jpeg" });
+        } catch (e) {
+          console.warn("HEIC conversion failed, sending original:", e);
+        }
+      }
+
+      // Create preview
       const reader = new FileReader();
       const uploadedImage: string = await new Promise((resolve) => {
         reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(displayFile);
       });
       setPreviewImage(uploadedImage);
 
       try {
+        // ── Phase 1: Fast narration (~10-15s) ──
         const formData = new FormData();
-        formData.append("image", file);
+        formData.append("image", displayFile);
         if (sessionId) formData.append("session_id", sessionId);
         if (trailName) formData.append("trail_name", trailName);
 
@@ -149,25 +273,101 @@ export default function TrailNarratorPage() {
 
         if (!sessionId) setSessionId(data.session_id);
 
+        const entryId = crypto.randomUUID();
         const entry: NarrationEntry = {
-          id: crypto.randomUUID(),
+          id: entryId,
           narration: data.narration,
           identification: data.identification,
-          timeTravelImage: data.time_travel_image,
-          timeTravelCaption: data.time_travel_caption,
+          timeTravelImage: null,
+          timeTravelCaption: "",
+          futureImage: null,
+          futureCaption: "",
           era: data.era,
           uploadedImage,
           timestamp: new Date(),
+          pastImageLoading: true,
+          futureImageLoading: true,
         };
 
         setStory((prev) => [...prev, { type: "narration", data: entry }]);
+        setIsLoading(false);
+
+        // Helper to update a specific narration entry in the story
+        const updateEntry = (updates: Partial<NarrationEntry>) => {
+          setStory((prev) =>
+            prev.map((s) =>
+              s.type === "narration" && s.data.id === entryId
+                ? { ...s, data: { ...s.data, ...updates } }
+                : s
+            )
+          );
+        };
+
+        // ── Phase 2: Past image (fire immediately, 3 min timeout) ──
+        try {
+          const pastRes = await fetch(`${API_URL}/api/generate-past-image`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              session_id: data.session_id,
+              narration: data.narration,
+              identification: data.identification,
+            }),
+            signal: AbortSignal.timeout(180_000),
+          });
+          if (pastRes.ok) {
+            const pastData = await pastRes.json();
+            updateEntry({
+              timeTravelImage: pastData.image,
+              timeTravelCaption: pastData.caption,
+              pastImageLoading: false,
+            });
+            if (pastData.image) showToast("Ancient landscape ready — tap Past to view");
+          } else {
+            const errText = await pastRes.text().catch(() => "");
+            console.error("[Past Image] HTTP error:", pastRes.status, errText);
+            updateEntry({ pastImageLoading: false, timeTravelCaption: "Past visualization unavailable." });
+          }
+        } catch (e) {
+          console.error("[Past Image] Fetch error:", e);
+          updateEntry({ pastImageLoading: false, timeTravelCaption: "Past visualization unavailable." });
+        }
+
+        // ── Phase 3: Future image (fire after past, 3 min timeout) ──
+        try {
+          const futureRes = await fetch(`${API_URL}/api/generate-future-image`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              session_id: data.session_id,
+              narration: data.narration,
+              identification: data.identification,
+            }),
+            signal: AbortSignal.timeout(180_000),
+          });
+          if (futureRes.ok) {
+            const futureData = await futureRes.json();
+            updateEntry({
+              futureImage: futureData.image,
+              futureCaption: futureData.caption,
+              futureImageLoading: false,
+            });
+            if (futureData.image) showToast("Future projection ready — tap Future to view");
+          } else {
+            const errText = await futureRes.text().catch(() => "");
+            console.error("[Future Image] HTTP error:", futureRes.status, errText);
+            updateEntry({ futureImageLoading: false, futureCaption: "Future visualization unavailable." });
+          }
+        } catch (e) {
+          console.error("[Future Image] Fetch error:", e);
+          updateEntry({ futureImageLoading: false, futureCaption: "Future visualization unavailable." });
+        }
       } catch (err: any) {
         setError(err.message || "Failed to narrate. Is the backend running?");
-      } finally {
         setIsLoading(false);
       }
     },
-    [sessionId, trailName]
+    [sessionId, trailName, showToast]
   );
 
   // ─── Follow-up Question ────────────────────────────────────
@@ -176,9 +376,19 @@ export default function TrailNarratorPage() {
     if (!question.trim() || !sessionId) return;
 
     const q = question.trim();
+    const entryId = crypto.randomUUID();
     setQuestion("");
     setIsAsking(true);
     setError(null);
+
+    // Show the question bubble immediately with a loading answer
+    const pendingEntry: FollowUpEntry = {
+      id: entryId,
+      question: q,
+      answer: "",
+      timestamp: new Date(),
+    };
+    setStory((prev) => [...prev, { type: "followup", data: pendingEntry }]);
 
     try {
       const res = await fetch(`${API_URL}/api/followup`, {
@@ -190,15 +400,17 @@ export default function TrailNarratorPage() {
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
 
-      const entry: FollowUpEntry = {
-        id: crypto.randomUUID(),
-        question: q,
-        answer: data.answer,
-        timestamp: new Date(),
-      };
-
-      setStory((prev) => [...prev, { type: "followup", data: entry }]);
+      // Update the existing entry with the real answer
+      setStory((prev) =>
+        prev.map((s) =>
+          s.type === "followup" && s.data.id === entryId
+            ? { ...s, data: { ...s.data, answer: data.answer } }
+            : s
+        )
+      );
     } catch (err: any) {
+      // Remove the pending entry on error
+      setStory((prev) => prev.filter((s) => !(s.type === "followup" && s.data.id === entryId)));
       setError(err.message || "Failed to get answer.");
     } finally {
       setIsAsking(false);
@@ -257,10 +469,11 @@ export default function TrailNarratorPage() {
         }
         window.speechSynthesis.cancel();
         setIsSpeaking(false);
+        setTtsLoading(false);
         return;
       }
 
-      setIsSpeaking(true);
+      setTtsLoading(true);
 
       try {
         // Try Gemini TTS first
@@ -286,13 +499,18 @@ export default function TrailNarratorPage() {
         };
         audio.onerror = () => {
           setIsSpeaking(false);
+          setTtsLoading(false);
           audioRef.current = null;
           URL.revokeObjectURL(blobUrl);
         };
+        setTtsLoading(false);
+        setIsSpeaking(true);
         await audio.play();
       } catch (err) {
         // Fallback to browser TTS
         console.warn("Gemini TTS failed, falling back to browser TTS:", err);
+        setTtsLoading(false);
+        setIsSpeaking(true);
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.rate = 0.9;
         utterance.pitch = 0.95;
@@ -343,9 +561,19 @@ export default function TrailNarratorPage() {
       <header className="sticky top-0 z-50 bg-[#FDFBF7]/90 backdrop-blur-md border-b border-[#e0d0b5]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-[#2c6b3e] flex items-center justify-center">
-              <Mountain className="w-4 h-4 text-white" />
-            </div>
+            {(hasStory || view === "explore") && (
+              <button
+                onClick={() => {
+                  if (hasStory) clearSession();
+                  else setView("landing");
+                }}
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f0e8db] transition-colors text-[#714a34]"
+                title="Back to home"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
+            <img src="/logo.png" alt="Trail Narrator" className="w-8 h-8 rounded-full object-cover" />
             <div>
               <h1 className="text-sm font-semibold tracking-wide text-[#331f16]">
                 Trail Narrator
@@ -371,13 +599,41 @@ export default function TrailNarratorPage() {
                 <span className="hidden sm:inline">Add Photo</span>
               </button>
             )}
+            {hasStory && (
+              <button
+                onClick={clearSession}
+                className="h-8 px-3 bg-[#f0e8db] hover:bg-red-100 rounded-lg flex items-center gap-1.5 text-xs font-medium text-[#8a7a66] hover:text-red-600 transition-colors"
+                title="Save and start fresh"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">New</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
 
       {/* ── Main Content ── */}
       <main className="flex-1">
-        {!hasStory ? (
+        {hasStory ? (
+          <StoryView
+            story={story}
+            isLoading={isLoading}
+            loadingMessage={loadingMessage}
+            speakNarration={speakNarration}
+            isSpeaking={isSpeaking}
+            ttsLoading={ttsLoading}
+            storyEndRef={storyEndRef}
+            parseIdentification={parseIdentification}
+          />
+        ) : view === "landing" ? (
+          <LandingPage
+            archive={archive}
+            onStartExploring={() => setView("explore")}
+            onRestoreSession={restoreFromArchive}
+            onClearArchive={clearArchive}
+          />
+        ) : (
           <WelcomeScreen
             trailName={trailName}
             setTrailName={setTrailName}
@@ -389,19 +645,10 @@ export default function TrailNarratorPage() {
             isLoading={isLoading}
             loadingMessage={loadingMessage}
             loadingStep={loadingStep}
+            elapsedSeconds={elapsedSeconds}
             previewImage={previewImage}
             error={error}
             setError={setError}
-          />
-        ) : (
-          <StoryView
-            story={story}
-            isLoading={isLoading}
-            loadingMessage={loadingMessage}
-            speakNarration={speakNarration}
-            isSpeaking={isSpeaking}
-            storyEndRef={storyEndRef}
-            parseIdentification={parseIdentification}
           />
         )}
       </main>
@@ -479,6 +726,19 @@ export default function TrailNarratorPage() {
         </div>
       )}
 
+      {/* Toast notifications */}
+      <div className="fixed top-16 right-4 z-50 flex flex-col gap-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className="animate-fade-in-up bg-[#2c6b3e] text-white px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium flex items-center gap-2 max-w-xs"
+          >
+            <Sparkles className="w-4 h-4 shrink-0" />
+            {toast.message}
+          </div>
+        ))}
+      </div>
+
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -496,6 +756,228 @@ export default function TrailNarratorPage() {
   );
 }
 
+// ─── Landing Page ─────────────────────────────────────────────
+
+function LandingPage({
+  archive,
+  onStartExploring,
+  onRestoreSession,
+  onClearArchive,
+}: {
+  archive: ArchivedSession[];
+  onStartExploring: () => void;
+  onRestoreSession: (entry: ArchivedSession) => void;
+  onClearArchive: () => void;
+}) {
+  const parseId = (raw: string) => {
+    try { return JSON.parse(raw); } catch { return null; }
+  };
+
+  return (
+    <div>
+      {/* ── Hero ── */}
+      <section className="text-center pt-16 pb-14 sm:pt-24 sm:pb-20 px-4">
+        <div className="w-20 h-20 rounded-full overflow-hidden mx-auto mb-6 ring-4 ring-[#dcedde] shadow-lg">
+          <img src="/logo.png" alt="Trail Narrator" className="w-full h-full object-cover" />
+        </div>
+        <p className="text-[11px] text-[#3d8750] uppercase tracking-widest mb-3 font-bold">
+          Your AI Park Ranger
+        </p>
+        <h2 className="font-narrative text-4xl sm:text-5xl font-semibold text-[#331f16] mb-4">
+          Trail Narrator
+        </h2>
+        <p className="text-base sm:text-lg text-[#8a7a66] leading-relaxed max-w-md mx-auto mb-8">
+          Upload a trail photo and discover the million-year story behind what
+          you see — with AI-generated time-travel imagery.
+        </p>
+        <button
+          onClick={onStartExploring}
+          className="h-12 px-8 bg-[#2c6b3e] hover:bg-[#245633] text-white rounded-xl text-sm font-semibold transition-colors inline-flex items-center gap-2 shadow-md btn-lift"
+        >
+          Start Exploring
+          <ArrowRight className="w-4 h-4" />
+        </button>
+      </section>
+
+      {/* ── How It Works ── */}
+      <section className="max-w-3xl mx-auto px-4 sm:px-6 pb-16">
+        <h3 className="text-center text-[10px] text-[#8a7a66] uppercase tracking-[0.2em] font-bold mb-8">
+          How it works
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8">
+          {[
+            { icon: Camera, title: "Upload a photo", desc: "Take or choose a trail, park, or landscape photo" },
+            { icon: Sparkles, title: "Ranger narrates", desc: "AI identifies geology, flora, and fauna — then tells the story" },
+            { icon: Clock, title: "Travel through time", desc: "See AI-generated imagery of the ancient past and projected future" },
+          ].map((step, i) => (
+            <div key={i} className="text-center">
+              <div className="w-14 h-14 rounded-2xl bg-[#dcedde] flex items-center justify-center mx-auto mb-4">
+                <step.icon className="w-6 h-6 text-[#2c6b3e]" />
+              </div>
+              <div className="text-[10px] text-[#2c6b3e] font-bold uppercase tracking-wider mb-1">
+                Step {i + 1}
+              </div>
+              <p className="text-sm font-semibold text-[#331f16] mb-1">{step.title}</p>
+              <p className="text-xs text-[#8a7a66] leading-relaxed">{step.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Features ── */}
+      <section className="max-w-3xl mx-auto px-4 sm:px-6 pb-16">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[
+            {
+              icon: Search,
+              title: "Verified Identification",
+              desc: "Google Search grounding ensures accurate geological and biological identification",
+              color: "text-[#714a34]",
+              bg: "bg-[#f0e8db]",
+            },
+            {
+              icon: Clock,
+              title: "Time-Travel Imagery",
+              desc: "AI-generated views of ancient landscapes and future projections",
+              color: "text-[#2c6b3e]",
+              bg: "bg-[#dcedde]",
+            },
+            {
+              icon: Mic,
+              title: "Voice Narration & Q&A",
+              desc: "Listen to the story and ask follow-up questions by voice",
+              color: "text-[#1b4f8a]",
+              bg: "bg-[#dce8f5]",
+            },
+          ].map((feat) => (
+            <div
+              key={feat.title}
+              className="p-5 rounded-2xl bg-white border border-[#e8e0d4] shadow-sm"
+            >
+              <div
+                className={`w-10 h-10 rounded-xl ${feat.bg} flex items-center justify-center mb-3`}
+              >
+                <feat.icon className={`w-5 h-5 ${feat.color}`} />
+              </div>
+              <p className="text-sm font-semibold text-[#331f16] mb-1">
+                {feat.title}
+              </p>
+              <p className="text-xs text-[#8a7a66] leading-relaxed">
+                {feat.desc}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Previous Stories Archive ── */}
+      <section className="max-w-3xl mx-auto px-4 sm:px-6 pb-16">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-[10px] text-[#8a7a66] uppercase tracking-[0.2em] font-bold">
+            Previous Explorations
+          </h3>
+          {archive.length > 0 && (
+            <button
+              onClick={onClearArchive}
+              className="text-xs text-[#8a7a66] hover:text-red-600 flex items-center gap-1 transition-colors"
+            >
+              <Trash2 className="w-3 h-3" />
+              Clear All
+            </button>
+          )}
+        </div>
+
+        {archive.length === 0 ? (
+          <div className="text-center py-12 bg-white border border-[#e8e0d4] rounded-2xl">
+            <Mountain className="w-8 h-8 text-[#cdb389] mx-auto mb-3" />
+            <p className="text-sm text-[#8a7a66]">No stories yet</p>
+            <p className="text-xs text-[#cdb389] mt-1">
+              Upload a trail photo to start your first exploration
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {archive.map((entry) => {
+              const firstNarration = entry.story.find(
+                (s) => s.type === "narration"
+              );
+              const narrationData =
+                firstNarration?.type === "narration"
+                  ? firstNarration.data
+                  : null;
+              const identification = narrationData
+                ? parseId(narrationData.identification)
+                : null;
+              const snippet = narrationData
+                ? narrationData.narration.slice(0, 120) +
+                  (narrationData.narration.length > 120 ? "..." : "")
+                : "";
+
+              return (
+                <button
+                  key={entry.id}
+                  onClick={() => onRestoreSession(entry)}
+                  className="text-left bg-white border border-[#e8e0d4] rounded-2xl overflow-hidden hover:shadow-md transition-all group"
+                >
+                  {narrationData?.uploadedImage && (
+                    <div className="relative h-36 overflow-hidden">
+                      <img
+                        src={narrationData.uploadedImage}
+                        alt={entry.trailName || "Trail photo"}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                      {narrationData.era && (
+                        <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[10px] font-semibold text-[#714a34] px-2 py-0.5 rounded">
+                          {narrationData.era}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="p-4">
+                    <p className="text-sm font-semibold text-[#331f16] mb-1 flex items-center gap-1.5">
+                      <MapPin className="w-3 h-3 text-[#2c6b3e] shrink-0" />
+                      {entry.trailName ||
+                        identification?.location_name ||
+                        "Trail Exploration"}
+                    </p>
+                    {snippet && (
+                      <p className="text-xs text-[#8a7a66] leading-relaxed line-clamp-2">
+                        {snippet}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-[#cdb389] mt-2">
+                      {new Date(entry.savedAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* ── Bottom CTA ── */}
+      <section className="text-center pb-16 px-4">
+        <button
+          onClick={onStartExploring}
+          className="h-12 px-8 bg-[#2c6b3e] hover:bg-[#245633] text-white rounded-xl text-sm font-semibold transition-colors inline-flex items-center gap-2"
+        >
+          <Camera className="w-4 h-4" />
+          Start Your Exploration
+        </button>
+      </section>
+
+      {/* ── Footer ── */}
+      <footer className="border-t border-[#e8e0d4] py-6 text-center">
+        <p className="text-[11px] text-[#cdb389]">
+          Powered by Google Gemini AI
+        </p>
+      </footer>
+    </div>
+  );
+}
+
 // ─── Welcome Screen ──────────────────────────────────────────
 
 function WelcomeScreen({
@@ -509,6 +991,7 @@ function WelcomeScreen({
   isLoading,
   loadingMessage,
   loadingStep,
+  elapsedSeconds,
   previewImage,
   error,
   setError,
@@ -523,18 +1006,17 @@ function WelcomeScreen({
   isLoading: boolean;
   loadingMessage: string;
   loadingStep: number;
+  elapsedSeconds: number;
   previewImage: string | null;
   error: string | null;
   setError: (v: string | null) => void;
 }) {
-  // Loading experience
+  // Loading experience — only the fast narration steps
   if (isLoading && previewImage) {
     const steps = [
       { icon: Camera, label: "Analyzing photo" },
       { icon: Layers, label: "Researching geology" },
       { icon: Sparkles, label: "Crafting narration" },
-      { icon: Clock, label: "Selecting era" },
-      { icon: Mountain, label: "Generating landscape" },
     ];
 
     return (
@@ -635,8 +1117,11 @@ function WelcomeScreen({
           </div>
         </div>
 
-        {/* Fun fact while waiting */}
-        <div className="text-center">
+        {/* Elapsed time + fun fact */}
+        <div className="text-center space-y-2">
+          <p className="text-sm font-mono font-semibold text-[#2c6b3e] tabular-nums">
+            {Math.floor(elapsedSeconds / 60)}:{(elapsedSeconds % 60).toString().padStart(2, "0")} elapsed
+          </p>
           <p className="text-xs text-[#8a7a66] italic font-narrative">
             &ldquo;The Earth is 4.5 billion years old. If that were compressed into 24 hours, humans would appear in the last 1.2 seconds.&rdquo;
           </p>
@@ -645,48 +1130,49 @@ function WelcomeScreen({
     );
   }
 
-  // Normal welcome screen
+  // Explore screen — focused upload experience
   return (
-    <div className="max-w-lg mx-auto px-4 sm:px-6 py-12 sm:py-20">
-      {/* Title */}
-      <div className="text-center mb-10">
-        <div className="w-16 h-16 rounded-full bg-[#2c6b3e] flex items-center justify-center mx-auto mb-5 ring-4 ring-[#dcedde]">
-          <Mountain className="w-7 h-7 text-white" />
+    <div className="max-w-lg mx-auto px-4 sm:px-6 py-8 sm:py-14">
+      {/* Compact header */}
+      <div className="mb-8">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#dcedde] mb-4">
+          <Sparkles className="w-3 h-3 text-[#2c6b3e]" />
+          <span className="text-[11px] font-bold text-[#2c6b3e] uppercase tracking-wider">
+            New Exploration
+          </span>
         </div>
-        <p className="text-[11px] text-[#8a7a66] uppercase tracking-widest mb-2 font-semibold">
-          Creative Storyteller Agent
-        </p>
-        <h1 className="font-narrative text-3xl sm:text-4xl font-semibold text-[#331f16] mb-3">
-          Trail Narrator
-        </h1>
-        <p className="text-base text-[#8a7a66] leading-relaxed max-w-sm mx-auto">
-          Upload a trail photo and your AI park ranger will narrate the
-          million-year story behind what you&apos;re seeing — with
-          time-travel imagery.
+        <h2 className="font-narrative text-2xl sm:text-3xl font-semibold text-[#331f16] mb-2">
+          Where are you exploring?
+        </h2>
+        <p className="text-sm text-[#8a7a66] leading-relaxed">
+          Share a trail photo and Ranger will uncover its story.
         </p>
       </div>
 
       {/* Trail name input */}
-      <div className="mb-4">
+      <div className="mb-5">
+        <label className="text-[11px] font-semibold text-[#8a7a66] uppercase tracking-wider block mb-2">
+          Trail or Park Name
+        </label>
         <input
           type="text"
           value={trailName}
           onChange={(e) => setTrailName(e.target.value)}
-          placeholder="Trail or park name (optional)"
-          className="w-full h-11 px-4 bg-white border border-[#e0d0b5] rounded-xl text-sm text-[#331f16] placeholder:text-[#cdb389] focus:outline-none focus:border-[#3d8750] transition-colors"
+          placeholder="e.g. Grand Canyon South Rim, Yosemite Valley..."
+          className="w-full h-12 px-4 bg-white border border-[#e0d0b5] rounded-xl text-sm text-[#331f16] placeholder:text-[#cdb389] focus:outline-none focus:border-[#3d8750] focus:ring-2 focus:ring-[#3d8750]/10 transition-all"
         />
       </div>
 
-      {/* Upload zone */}
+      {/* Upload zone — large and inviting */}
       <div
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
         onDragOver={handleDrag}
         onDrop={handleDrop}
-        className={`relative border-2 border-dashed rounded-2xl p-8 sm:p-10 text-center transition-all cursor-pointer ${
+        className={`relative border-2 border-dashed rounded-2xl p-10 sm:p-14 text-center transition-all cursor-pointer ${
           dragActive
-            ? "border-[#3d8750] bg-[#dcedde]"
-            : "border-[#e0d0b5] bg-[#f0e8db]/50 hover:border-[#cdb389] hover:bg-[#f0e8db]"
+            ? "border-[#3d8750] bg-[#dcedde] scale-[1.01]"
+            : "border-[#d5c8b0] bg-gradient-to-b from-[#f8f3ec] to-[#f0e8db]/60 hover:border-[#3d8750]/50 hover:bg-[#f0e8db]"
         } ${isLoading ? "pointer-events-none" : ""}`}
         onClick={() => !isLoading && fileInputRef.current?.click()}
       >
@@ -702,32 +1188,38 @@ function WelcomeScreen({
           </div>
         ) : (
           <>
-            <div className="w-14 h-14 rounded-2xl bg-[#e0d0b5] flex items-center justify-center mx-auto mb-4">
-              <Upload className="w-6 h-6 text-[#714a34]" />
+            <div className="w-16 h-16 rounded-full bg-[#2c6b3e]/10 flex items-center justify-center mx-auto mb-5">
+              <div className="w-11 h-11 rounded-full bg-[#2c6b3e] flex items-center justify-center">
+                <Camera className="w-5 h-5 text-white" />
+              </div>
             </div>
-            <p className="text-sm font-medium text-[#5d3e2d] mb-1">
-              Drop a trail photo here or tap to upload
+            <p className="text-[15px] font-semibold text-[#331f16] mb-1.5">
+              Drop your trail photo here
             </p>
-            <p className="text-xs text-[#8a7a66]">
-              JPG, PNG, HEIC — from your camera roll or desktop
+            <p className="text-xs text-[#8a7a66] mb-4">
+              JPG, PNG, or HEIC — from your camera roll or desktop
             </p>
+            <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#3d8750] bg-[#dcedde] px-3 py-1.5 rounded-full">
+              <Upload className="w-3 h-3" />
+              or click to browse
+            </div>
           </>
         )}
       </div>
 
-      {/* Quick action buttons */}
+      {/* Action buttons */}
       {!isLoading && (
-        <div className="flex gap-3 mt-4">
+        <div className="flex gap-3 mt-5">
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex-1 h-12 bg-[#2c6b3e] hover:bg-[#245633] text-white rounded-xl flex items-center justify-center gap-2 text-sm font-medium transition-colors"
+            className="flex-1 h-12 bg-[#2c6b3e] hover:bg-[#245633] text-white rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition-colors shadow-sm btn-lift"
           >
             <Camera className="w-4 h-4" />
             Take Photo
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex-1 h-12 bg-white border border-[#e0d0b5] hover:bg-[#f0e8db] text-[#714a34] rounded-xl flex items-center justify-center gap-2 text-sm font-medium transition-colors"
+            className="flex-1 h-12 bg-white border border-[#e0d0b5] hover:bg-[#f0e8db] text-[#714a34] rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition-colors"
           >
             <Upload className="w-4 h-4" />
             Choose File
@@ -751,29 +1243,25 @@ function WelcomeScreen({
         </div>
       )}
 
-      {/* Features */}
-      <div className="grid grid-cols-3 gap-3 mt-10">
-        {[
-          { icon: Layers, label: "Geological\nstory", color: "text-[#714a34]" },
-          {
-            icon: Clock,
-            label: "Time-travel\nimagery",
-            color: "text-[#3d8750]",
-          },
-          { icon: Mic, label: "Voice\ninteraction", color: "text-[#4785e8]" },
-        ].map((feat) => (
-          <div
-            key={feat.label}
-            className="text-center p-3 rounded-xl bg-white border border-[#f0e8db]"
-          >
-            <feat.icon
-              className={`w-5 h-5 ${feat.color} mx-auto mb-2`}
-            />
-            <p className="text-[11px] text-[#8a7a66] whitespace-pre-line leading-tight">
-              {feat.label}
-            </p>
-          </div>
-        ))}
+      {/* What happens next — replaces the old features grid */}
+      <div className="mt-10 bg-white border border-[#e8e0d4] rounded-2xl p-5 sm:p-6">
+        <p className="text-[10px] text-[#8a7a66] uppercase tracking-[0.15em] font-bold mb-4">
+          What happens next
+        </p>
+        <div className="space-y-3">
+          {[
+            { icon: Sparkles, label: "Ranger identifies the geology, flora, and landscape", color: "bg-[#2c6b3e]" },
+            { icon: Layers, label: "A rich narration tells the million-year story", color: "bg-[#714a34]" },
+            { icon: Clock, label: "Time-travel imagery shows past and future views", color: "bg-[#1b4f8a]" },
+          ].map((step, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <div className={`w-7 h-7 rounded-lg ${step.color} flex items-center justify-center shrink-0`}>
+                <step.icon className="w-3.5 h-3.5 text-white" />
+              </div>
+              <p className="text-[13px] text-[#5d3e2d] leading-snug">{step.label}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -787,6 +1275,7 @@ function StoryView({
   loadingMessage,
   speakNarration,
   isSpeaking,
+  ttsLoading,
   storyEndRef,
   parseIdentification,
 }: {
@@ -795,7 +1284,8 @@ function StoryView({
   loadingMessage: string;
   speakNarration: (text: string) => void;
   isSpeaking: boolean;
-  storyEndRef: React.RefObject<HTMLDivElement | null>;
+  ttsLoading: boolean;
+  storyEndRef: React.RefObject<HTMLDivElement>;
   parseIdentification: (raw: string) => Record<string, any> | null;
 }) {
   return (
@@ -820,6 +1310,7 @@ function StoryView({
               total={story.filter((s) => s.type === "narration").length}
               speakNarration={speakNarration}
               isSpeaking={isSpeaking}
+              ttsLoading={ttsLoading}
               parseIdentification={parseIdentification}
             />
           ) : (
@@ -867,6 +1358,7 @@ function NarrationCard({
   total,
   speakNarration,
   isSpeaking,
+  ttsLoading,
   parseIdentification,
 }: {
   data: NarrationEntry;
@@ -874,10 +1366,11 @@ function NarrationCard({
   total: number;
   speakNarration: (text: string) => void;
   isSpeaking: boolean;
+  ttsLoading: boolean;
   parseIdentification: (raw: string) => Record<string, any> | null;
 }) {
   const identification = parseIdentification(data.identification);
-  const [showTimeTravel, setShowTimeTravel] = useState(true);
+  const [timelineTab, setTimelineTab] = useState<"past" | "present" | "future">("past");
   const paragraphs = data.narration.split("\n\n").filter(Boolean);
 
   const renderMarkdown = (text: string) => {
@@ -943,13 +1436,21 @@ function NarrationCard({
           </div>
           <button
             onClick={() => speakNarration(data.narration)}
+            disabled={ttsLoading}
             className={`h-9 px-3.5 rounded-xl flex items-center gap-2 text-xs font-semibold transition-all btn-lift ${
               isSpeaking
                 ? "bg-[#2c6b3e] text-white"
+                : ttsLoading
+                ? "bg-[#2c6b3e]/70 text-white cursor-wait"
                 : "bg-[#f0e8db] text-[#714a34] hover:bg-[#e0d0b5]"
             }`}
           >
-            {isSpeaking ? (
+            {ttsLoading ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Loading...</span>
+              </>
+            ) : isSpeaking ? (
               <>
                 <div className="speaking-wave flex items-center gap-[2px] h-4">
                   {[...Array(5)].map((_, i) => (
@@ -1036,38 +1537,118 @@ function NarrationCard({
           </div>
         )}
 
-        {/* Time-travel image */}
-        {data.timeTravelImage && (
-          <div>
-            {/* Era divider */}
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#e0d0b5] to-transparent" />
-              <div className="flex items-center gap-1.5 px-4 py-1.5 bg-[#f0e8db] rounded-full border border-[#e0d0b5]">
-                <Clock className="w-3 h-3 text-[#a67244]" />
-                <span className="text-[10px] font-bold text-[#714a34] uppercase tracking-[0.15em]">
-                  Time travel
-                </span>
-              </div>
-              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#e0d0b5] to-transparent" />
+        {/* Timeline: Past / Present / Future — always shown, with loading states */}
+        <div>
+          {/* Divider */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#e0d0b5] to-transparent" />
+            <div className="flex items-center gap-1.5 px-4 py-1.5 bg-[#f0e8db] rounded-full border border-[#e0d0b5]">
+              <Clock className="w-3 h-3 text-[#a67244]" />
+              <span className="text-[10px] font-bold text-[#714a34] uppercase tracking-[0.15em]">
+                Through time
+              </span>
             </div>
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#e0d0b5] to-transparent" />
+          </div>
 
-            {/* Image with reveal animation */}
-            <div className="time-travel-reveal rounded-xl overflow-hidden border border-[#e0d0b5] shadow-sm">
-              <img
-                src={`data:image/png;base64,${data.timeTravelImage}`}
-                alt={data.timeTravelCaption || "Time-travel visualization"}
-                className="w-full"
-              />
-              {data.timeTravelCaption && (
-                <div className="px-4 sm:px-5 py-3.5 bg-gradient-to-r from-[#f0e8db] to-[#f5efe5] border-t border-[#e0d0b5]">
-                  <p className="text-[13px] text-[#714a34] italic leading-relaxed font-narrative">
-                    {data.timeTravelCaption}
+          {/* Tab buttons */}
+          <div className="flex rounded-xl bg-[#f0e8db] p-1 mb-4 border border-[#e0d0b5]">
+            {([
+              { key: "past" as const, label: data.pastImageLoading ? "Past..." : "Past", color: "bg-[#714a34]", loading: data.pastImageLoading },
+              { key: "present" as const, label: "Present", color: "bg-[#2c6b3e]", loading: false },
+              { key: "future" as const, label: data.futureImageLoading ? "Future..." : "Future", color: "bg-[#1b4f8a]", loading: data.futureImageLoading },
+            ]).map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setTimelineTab(tab.key)}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                  timelineTab === tab.key
+                    ? `${tab.color} text-white shadow-sm`
+                    : "text-[#8a7a66] hover:text-[#5d3e2d]"
+                }`}
+              >
+                {tab.loading && <Loader2 className="w-3 h-3 animate-spin" />}
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Full-width image panel */}
+          <div className="time-travel-reveal rounded-xl overflow-hidden border border-[#e0d0b5] shadow-sm">
+            {timelineTab === "past" && (
+              data.pastImageLoading ? (
+                <div className="aspect-video bg-gradient-to-br from-[#f0e8db] to-[#e0d0b5]/30 flex flex-col items-center justify-center gap-3">
+                  <Loader2 className="w-8 h-8 text-[#714a34] animate-spin" />
+                  <p className="text-sm text-[#714a34] font-medium">Generating ancient landscape...</p>
+                  <p className="text-xs text-[#8a7a66]">This takes 20-30 seconds</p>
+                </div>
+              ) : data.timeTravelImage ? (
+                <>
+                  <img
+                    src={`data:image/png;base64,${data.timeTravelImage}`}
+                    alt={data.timeTravelCaption || "Ancient past"}
+                    className="w-full animate-fade-in"
+                  />
+                  {data.timeTravelCaption && (
+                    <div className="px-4 sm:px-5 py-3.5 bg-gradient-to-r from-[#f0e8db] to-[#f5efe5] border-t border-[#e0d0b5]">
+                      <p className="text-[13px] text-[#714a34] italic leading-relaxed font-narrative">
+                        {data.timeTravelCaption}
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="aspect-video bg-[#f0e8db]/50 flex items-center justify-center">
+                  <p className="text-sm text-[#8a7a66] italic">Past visualization unavailable</p>
+                </div>
+              )
+            )}
+
+            {timelineTab === "present" && (
+              <>
+                <img
+                  src={data.uploadedImage}
+                  alt="Present day"
+                  className="w-full"
+                />
+                <div className="px-4 sm:px-5 py-3.5 bg-[#dcedde] border-t border-[#2c6b3e]/20">
+                  <p className="text-[13px] text-[#2c6b3e] font-semibold leading-relaxed">
+                    Your photo — today
                   </p>
                 </div>
-              )}
-            </div>
+              </>
+            )}
+
+            {timelineTab === "future" && (
+              data.futureImageLoading ? (
+                <div className="aspect-video bg-gradient-to-br from-[#dce8f5] to-[#c3dbfa]/30 flex flex-col items-center justify-center gap-3">
+                  <Loader2 className="w-8 h-8 text-[#1b4f8a] animate-spin" />
+                  <p className="text-sm text-[#1b4f8a] font-medium">Projecting the future...</p>
+                  <p className="text-xs text-[#8a7a66]">This takes 20-30 seconds</p>
+                </div>
+              ) : data.futureImage ? (
+                <>
+                  <img
+                    src={`data:image/png;base64,${data.futureImage}`}
+                    alt={data.futureCaption || "Projected future"}
+                    className="w-full animate-fade-in"
+                  />
+                  {data.futureCaption && (
+                    <div className="px-4 sm:px-5 py-3.5 bg-gradient-to-r from-[#dce8f5] to-[#c3dbfa]/40 border-t border-[#c3dbfa]">
+                      <p className="text-[13px] text-[#1b4f8a] italic leading-relaxed font-narrative">
+                        {data.futureCaption}
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="aspect-video bg-[#dce8f5]/50 flex items-center justify-center">
+                  <p className="text-sm text-[#8a7a66] italic">Future visualization unavailable</p>
+                </div>
+              )
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -1076,37 +1657,51 @@ function NarrationCard({
 // ─── Follow-up Card ──────────────────────────────────────────
 
 function FollowUpCard({ data }: { data: FollowUpEntry }) {
+  const isLoading = !data.answer;
+
   return (
     <div className="space-y-3">
       {/* Question bubble */}
-      <div className="flex justify-end">
+      <div className="flex justify-end animate-fade-in-up">
         <div className="max-w-[80%] bg-[#2c6b3e] text-white px-4 py-2.5 rounded-2xl rounded-tr-md">
           <p className="text-sm">{data.question}</p>
         </div>
       </div>
 
-      {/* Answer */}
-      <div className="flex gap-2.5">
+      {/* Answer or typing indicator */}
+      <div className="flex gap-2.5 animate-fade-in-up" style={{ animationDelay: "0.15s" }}>
         <div className="w-7 h-7 rounded-full bg-[#2c6b3e] flex items-center justify-center shrink-0 mt-1">
-          <Sparkles className="w-3 h-3 text-white" />
+          {isLoading ? (
+            <Loader2 className="w-3 h-3 text-white animate-spin" />
+          ) : (
+            <Sparkles className="w-3 h-3 text-white" />
+          )}
         </div>
         <div className="bg-white border border-[#e0d0b5] rounded-2xl rounded-tl-md px-4 py-3 max-w-[85%]">
-          <div className="font-narrative text-[15px] leading-[1.75] text-[#331f16] space-y-3">
-            {data.answer.split("\n\n").map((p, i) => (
-              <p key={i}>
-                {p.split(/(\*\*[^*]+\*\*)/).map((segment, j) => {
-                  if (segment.startsWith("**") && segment.endsWith("**")) {
-                    return (
-                      <strong key={j} className="font-semibold text-[#714a34]">
-                        {segment.slice(2, -2)}
-                      </strong>
-                    );
-                  }
-                  return <span key={j}>{segment}</span>;
-                })}
-              </p>
-            ))}
-          </div>
+          {isLoading ? (
+            <div className="flex items-center gap-1.5 py-1">
+              <span className="w-2 h-2 rounded-full bg-[#8a7a66] animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="w-2 h-2 rounded-full bg-[#8a7a66] animate-bounce" style={{ animationDelay: "150ms" }} />
+              <span className="w-2 h-2 rounded-full bg-[#8a7a66] animate-bounce" style={{ animationDelay: "300ms" }} />
+            </div>
+          ) : (
+            <div className="font-narrative text-[15px] leading-[1.75] text-[#331f16] space-y-3">
+              {data.answer.split("\n\n").map((p, i) => (
+                <p key={i}>
+                  {p.split(/(\*\*[^*]+\*\*)/).map((segment, j) => {
+                    if (segment.startsWith("**") && segment.endsWith("**")) {
+                      return (
+                        <strong key={j} className="font-semibold text-[#714a34]">
+                          {segment.slice(2, -2)}
+                        </strong>
+                      );
+                    }
+                    return <span key={j}>{segment}</span>;
+                  })}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
