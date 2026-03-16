@@ -185,16 +185,33 @@ export default function TrailNarratorPage() {
     if (story.length === 0) return;
     // Don't duplicate if this session is already archived
     if (archive.some((a) => a.sessionId === sessionId)) return;
+    // Strip large base64 images to avoid localStorage quota errors
+    const lightStory = story.map((s) => {
+      if (s.type === "narration") {
+        return {
+          ...s,
+          data: {
+            ...s.data,
+            uploadedImage: "",
+            timeTravelImage: null,
+            futureImage: null,
+          },
+        };
+      }
+      return s;
+    });
     const entry: ArchivedSession = {
       id: crypto.randomUUID(),
       trailName,
-      story,
+      story: lightStory,
       sessionId: sessionId || "",
       savedAt: new Date().toISOString(),
     };
     setArchive((prev) => {
-      const updated = [entry, ...prev].slice(0, 20);
-      localStorage.setItem("trail-narrator-archive", JSON.stringify(updated));
+      const updated = [entry, ...prev].slice(0, 10);
+      try {
+        localStorage.setItem("trail-narrator-archive", JSON.stringify(updated));
+      } catch {}
       return updated;
     });
   }, [story, trailName, sessionId, archive]);
