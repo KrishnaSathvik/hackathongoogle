@@ -1,0 +1,190 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-parchment: #fdfbf7;
+  --bg-sand: #f0e8db;
+  --bg-warm: #e0d0b5;
+  --forest-50: #dcedde;
+  --forest-500: #3d8750;
+  --forest-700: #2c6b3e;
+  --forest-900: #1a3924;
+  --earth-300: #cdb389;
+  --earth-500: #a67244;
+  --earth-700: #714a34;
+  --earth-900: #5d3e2d;
+  --earth-950: #331f16;
+  --sky-200: #c3dbfa;
+  --sky-500: #4785e8;
+  --muted: #8a7a66;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Source Sans 3", system-ui, sans-serif;
+  min-height: 100dvh;
+}
+
+.font-narrative {
+  font-family: "Playfair Display", Georgia, serif;
+}
+
+.font-ui {
+  font-family: "Source Sans 3", system-ui, sans-serif;
+}
+
+/* Drop cap for first paragraph of narration */
+.drop-cap::first-letter {
+  float: left;
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 3.5rem;
+  line-height: 0.8;
+  padding-right: 8px;
+  padding-top: 6px;
+  color: var(--earth-700);
+  font-weight: 600;
+}
+
+/* Shimmer loading */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, var(--bg-sand) 25%, var(--bg-warm) 50%, var(--bg-sand) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+/* Fade in up */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.7s ease-out forwards;
+}
+
+/* Staggered paragraph reveal */
+@keyframes fadeInParagraph {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.narration-paragraph {
+  opacity: 0;
+  animation: fadeInParagraph 0.6s ease-out forwards;
+}
+
+.narration-paragraph:nth-child(1) { animation-delay: 0.1s; }
+.narration-paragraph:nth-child(2) { animation-delay: 0.35s; }
+.narration-paragraph:nth-child(3) { animation-delay: 0.6s; }
+.narration-paragraph:nth-child(4) { animation-delay: 0.85s; }
+
+/* Time-travel image reveal — blur + scale in */
+@keyframes revealTimeTravel {
+  from { opacity: 0; transform: scale(0.96); filter: blur(6px); }
+  to { opacity: 1; transform: scale(1); filter: blur(0px); }
+}
+
+.time-travel-reveal {
+  animation: revealTimeTravel 1s ease-out forwards;
+  animation-delay: 0.3s;
+  opacity: 0;
+}
+
+/* Pulse dot for recording */
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.6); }
+}
+
+.pulse-dot {
+  animation: pulseDot 1.5s ease-in-out infinite;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg-warm); border-radius: 4px; }
+
+/* Photo hover zoom */
+.photo-hover {
+  transition: transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.photo-hover:hover {
+  transform: scale(1.03);
+}
+
+/* Button lift effect */
+.btn-lift {
+  transition: all 0.2s ease;
+}
+
+.btn-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.btn-lift:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* Tag hover */
+.tag-hover {
+  transition: all 0.15s ease;
+  cursor: default;
+}
+
+.tag-hover:hover {
+  transform: translateY(-1px);
+  filter: brightness(0.95);
+}
+
+/* Geological tags stagger animation */
+@keyframes tagAppear {
+  from { opacity: 0; transform: scale(0.9) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.geo-tags > span {
+  opacity: 0;
+  animation: tagAppear 0.3s ease-out forwards;
+}
+
+.geo-tags > span:nth-child(1) { animation-delay: 0.05s; }
+.geo-tags > span:nth-child(2) { animation-delay: 0.1s; }
+.geo-tags > span:nth-child(3) { animation-delay: 0.15s; }
+.geo-tags > span:nth-child(4) { animation-delay: 0.2s; }
+.geo-tags > span:nth-child(5) { animation-delay: 0.25s; }
+.geo-tags > span:nth-child(6) { animation-delay: 0.3s; }
+.geo-tags > span:nth-child(7) { animation-delay: 0.35s; }
+.geo-tags > span:nth-child(8) { animation-delay: 0.4s; }
+.geo-tags > span:nth-child(9) { animation-delay: 0.45s; }
+
+/* Speaking waveform animation */
+@keyframes wave1 { 0%, 100% { height: 8px; } 50% { height: 20px; } }
+@keyframes wave2 { 0%, 100% { height: 12px; } 50% { height: 24px; } }
+@keyframes wave3 { 0%, 100% { height: 6px; } 50% { height: 18px; } }
+
+.speaking-wave span:nth-child(1) { animation: wave1 0.8s ease-in-out infinite; }
+.speaking-wave span:nth-child(2) { animation: wave2 0.8s ease-in-out infinite 0.1s; }
+.speaking-wave span:nth-child(3) { animation: wave3 0.8s ease-in-out infinite 0.2s; }
+.speaking-wave span:nth-child(4) { animation: wave1 0.8s ease-in-out infinite 0.3s; }
+.speaking-wave span:nth-child(5) { animation: wave2 0.8s ease-in-out infinite 0.15s; }
+
+/* Scan line animation for loading photo preview */
+@keyframes scanLine {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(200%); }
+}

@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+backend/.venv/
+__pycache__/
+
+# Environment files with secrets
+backend/.env
+frontend/.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Next.js
+frontend/.next/
+frontend/out/
+
+# Python
+*.pyc
+*.pyo
+dist/
+*.egg-info/
+
+# Superpowers
+.superpowers/

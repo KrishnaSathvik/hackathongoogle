@@ -106,11 +106,17 @@ async def narrate_trail_photo(
         trail_context = f"Trail: {trail_name}"
     
     # Run the narration pipeline
-    result = await analyze_and_narrate(
-        image_bytes=image_bytes,
-        trail_context=trail_context,
-        previous_narration=previous_narration,
-    )
+    try:
+        result = await analyze_and_narrate(
+            image_bytes=image_bytes,
+            trail_context=trail_context,
+            previous_narration=previous_narration,
+        )
+    except Exception as e:
+        print(f"Narration pipeline error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Narration failed: {str(e)}")
     
     # Store narration in session
     if session_id in sessions:
@@ -147,6 +153,69 @@ async def followup_question(request: FollowUpRequest):
     )
     
     return FollowUpResponse(answer=answer)
+
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "Kore"  # Warm, storytelling voice
+
+
+@app.post("/api/tts")
+async def text_to_speech(request: TTSRequest):
+    """
+    Convert narration text to natural speech using Gemini TTS.
+    Returns WAV audio as base64.
+    """
+    from google import genai
+    from google.genai import types
+    import wave
+    import io
+    import base64
+
+    client = genai.Client()
+
+    try:
+        response = await client.aio.models.generate_content(
+            model="gemini-2.5-flash-preview-tts",
+            contents=f"Read the following in a warm, engaging park ranger storytelling voice. Speak naturally with gentle pacing, as if narrating a nature documentary by a campfire:\n\n{request.text}",
+            config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name=request.voice,
+                        )
+                    )
+                ),
+            ),
+        )
+
+        # Extract audio data
+        audio_data = None
+        for part in response.candidates[0].content.parts:
+            if part.inline_data and part.inline_data.mime_type.startswith("audio/"):
+                audio_data = part.inline_data.data
+                break
+
+        if not audio_data:
+            raise HTTPException(status_code=500, detail="No audio generated")
+
+        # Convert PCM to WAV
+        wav_buffer = io.BytesIO()
+        with wave.open(wav_buffer, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)  # 16-bit
+            wf.setframerate(24000)
+            wf.writeframes(audio_data)
+
+        wav_bytes = wav_buffer.getvalue()
+        audio_b64 = base64.b64encode(wav_bytes).decode("utf-8")
+
+        return {"audio": audio_b64, "mime_type": "audio/wav"}
+
+    except Exception as e:
+        print(f"TTS error: {e}")
+        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
 
 
 if __name__ == "__main__":
