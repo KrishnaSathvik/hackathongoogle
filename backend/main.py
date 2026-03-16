@@ -275,6 +275,13 @@ async def get_public_stories():
     return public_stories[:50]
 
 
+@app.delete("/api/stories")
+async def clear_public_stories():
+    """Clear all public stories."""
+    public_stories.clear()
+    return {"status": "cleared"}
+
+
 @app.post("/api/stories")
 async def publish_story(request: PublishStoryRequest):
     """Save a completed story to the public gallery."""
