@@ -217,7 +217,7 @@ export default function TrailNarratorPage() {
     setSessionId(null);
     setTrailName("");
     setPreviewImage(null);
-    setView("landing");
+    setView("explore");
   }, [saveToArchive]);
 
   // ─── Upload & Narrate ──────────────────────────────────────
@@ -457,6 +457,7 @@ export default function TrailNarratorPage() {
   // ─── Text-to-Speech (Gemini TTS with browser fallback) ─────
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsCacheRef = useRef<Map<string, string>>(new Map());
 
   const speakNarration = useCallback(
     async (text: string) => {
@@ -474,34 +475,39 @@ export default function TrailNarratorPage() {
       }
 
       setTtsLoading(true);
+      const cacheKey = text.slice(0, 200);
 
       try {
-        // Try Gemini TTS first
-        const res = await fetch(`${API_URL}/api/tts`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: text.slice(0, 3000) }), // TTS has input limits
-        });
+        let blobUrl = ttsCacheRef.current.get(cacheKey);
 
-        if (!res.ok) throw new Error("TTS API failed");
+        if (!blobUrl) {
+          // Try Gemini TTS first
+          const res = await fetch(`${API_URL}/api/tts`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: text.slice(0, 3000) }), // TTS has input limits
+          });
 
-        const data = await res.json();
-        // Use Blob URL instead of data URL for reliable playback of large audio
-        const audioBytes = Uint8Array.from(atob(data.audio), (c) => c.charCodeAt(0));
-        const blob = new Blob([audioBytes], { type: data.mime_type });
-        const blobUrl = URL.createObjectURL(blob);
+          if (!res.ok) throw new Error("TTS API failed");
+
+          const data = await res.json();
+          // Use Blob URL instead of data URL for reliable playback of large audio
+          const audioBytes = Uint8Array.from(atob(data.audio), (c) => c.charCodeAt(0));
+          const blob = new Blob([audioBytes], { type: data.mime_type });
+          blobUrl = URL.createObjectURL(blob);
+          ttsCacheRef.current.set(cacheKey, blobUrl);
+        }
+
         const audio = new Audio(blobUrl);
         audioRef.current = audio;
         audio.onended = () => {
           setIsSpeaking(false);
           audioRef.current = null;
-          URL.revokeObjectURL(blobUrl);
         };
         audio.onerror = () => {
           setIsSpeaking(false);
           setTtsLoading(false);
           audioRef.current = null;
-          URL.revokeObjectURL(blobUrl);
         };
         setTtsLoading(false);
         setIsSpeaking(true);
@@ -597,16 +603,6 @@ export default function TrailNarratorPage() {
               >
                 <ImagePlus className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Add Photo</span>
-              </button>
-            )}
-            {hasStory && (
-              <button
-                onClick={clearSession}
-                className="h-8 px-3 bg-[#f0e8db] hover:bg-red-100 rounded-lg flex items-center gap-1.5 text-xs font-medium text-[#8a7a66] hover:text-red-600 transition-colors"
-                title="Save and start fresh"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">New</span>
               </button>
             )}
           </div>
