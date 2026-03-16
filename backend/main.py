@@ -34,6 +34,9 @@ app.add_middleware(
 # In-memory session store (swap for Firestore in production)
 sessions: dict = {}
 
+# Public story gallery (in-memory, most recent first)
+public_stories: list = []
+
 
 class FollowUpRequest(BaseModel):
     session_id: str
@@ -60,6 +63,17 @@ class ImageResponse(BaseModel):
 
 class FollowUpResponse(BaseModel):
     answer: str
+
+
+class PublishStoryRequest(BaseModel):
+    trail_name: str
+    narration: str
+    identification: str
+    era: str
+    past_image: str | None = None
+    past_caption: str = ""
+    future_image: str | None = None
+    future_caption: str = ""
 
 
 @app.get("/")
@@ -253,6 +267,46 @@ async def text_to_speech(request: TTSRequest):
     except Exception as e:
         print(f"TTS error: {e}")
         raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+
+
+@app.get("/api/stories")
+async def get_public_stories():
+    """Return all publicly shared trail stories for the gallery."""
+    return public_stories[:50]
+
+
+@app.post("/api/stories")
+async def publish_story(request: PublishStoryRequest):
+    """Save a completed story to the public gallery."""
+    import json
+    from datetime import datetime
+
+    # Parse location name from identification
+    location_name = request.trail_name
+    try:
+        id_data = json.loads(request.identification)
+        location_name = id_data.get("location_name", request.trail_name) or request.trail_name
+    except Exception:
+        pass
+
+    story = {
+        "id": str(uuid.uuid4()),
+        "trail_name": request.trail_name,
+        "location_name": location_name,
+        "narration": request.narration,
+        "identification": request.identification,
+        "era": request.era,
+        "past_image": request.past_image,
+        "past_caption": request.past_caption,
+        "future_image": request.future_image,
+        "future_caption": request.future_caption,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    public_stories.insert(0, story)
+    # Keep max 50 stories
+    if len(public_stories) > 50:
+        public_stories.pop()
+    return {"id": story["id"], "status": "published"}
 
 
 if __name__ == "__main__":

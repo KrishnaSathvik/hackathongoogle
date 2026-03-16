@@ -84,6 +84,7 @@ export default function TrailNarratorPage() {
   const [toasts, setToasts] = useState<{ id: string; message: string }[]>([]);
   const [view, setView] = useState<"landing" | "explore">("landing");
   const [archive, setArchive] = useState<ArchivedSession[]>([]);
+  const [publicStories, setPublicStories] = useState<any[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const storyEndRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
@@ -95,6 +96,14 @@ export default function TrailNarratorPage() {
     const id = crypto.randomUUID();
     setToasts((prev) => [...prev, { id, message }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
+  }, []);
+
+  // Fetch public stories on mount
+  useEffect(() => {
+    fetch(`${API_URL}/api/stories`)
+      .then((r) => r.json())
+      .then((data) => setPublicStories(data))
+      .catch(() => {});
   }, []);
 
   // Restore persisted state on mount
@@ -379,6 +388,41 @@ export default function TrailNarratorPage() {
           console.error("[Future Image] Fetch error:", e);
           updateEntry({ futureImageLoading: false, futureCaption: "Future visualization unavailable." });
         }
+
+        // ── Auto-publish to public gallery ──
+        try {
+          // Read latest story state to get images
+          let pastImg: string | null = null;
+          let pastCap = "";
+          let futureImg: string | null = null;
+          let futureCap = "";
+          setStory((prev) => {
+            const found = prev.find(
+              (s) => s.type === "narration" && s.data.id === entryId
+            );
+            if (found?.type === "narration") {
+              pastImg = found.data.timeTravelImage;
+              pastCap = found.data.timeTravelCaption;
+              futureImg = found.data.futureImage;
+              futureCap = found.data.futureCaption;
+            }
+            return prev;
+          });
+          await fetch(`${API_URL}/api/stories`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              trail_name: trailName || "Trail Exploration",
+              narration: data.narration,
+              identification: data.identification,
+              era: data.era,
+              past_image: pastImg,
+              past_caption: pastCap,
+              future_image: futureImg,
+              future_caption: futureCap,
+            }),
+          });
+        } catch {}
       } catch (err: any) {
         setError(err.message || "Failed to narrate. Is the backend running?");
         setIsLoading(false);
@@ -642,6 +686,7 @@ export default function TrailNarratorPage() {
         ) : view === "landing" ? (
           <LandingPage
             archive={archive}
+            publicStories={publicStories}
             onStartExploring={() => setView("explore")}
             onRestoreSession={restoreFromArchive}
             onClearArchive={clearArchive}
@@ -772,15 +817,20 @@ export default function TrailNarratorPage() {
 
 function LandingPage({
   archive,
+  publicStories,
   onStartExploring,
   onRestoreSession,
   onClearArchive,
 }: {
   archive: ArchivedSession[];
+  publicStories: any[];
   onStartExploring: () => void;
   onRestoreSession: (entry: ArchivedSession) => void;
   onClearArchive: () => void;
 }) {
+  const [expandedStory, setExpandedStory] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<Record<string, "past" | "future">>({});
+
   const parseId = (raw: string) => {
     try { return JSON.parse(raw); } catch { return null; }
   };
@@ -836,133 +886,118 @@ function LandingPage({
         </div>
       </section>
 
-      {/* ── Features ── */}
-      <section className="max-w-3xl mx-auto px-4 sm:px-6 pb-16">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {[
-            {
-              icon: Search,
-              title: "Verified Identification",
-              desc: "Google Search grounding ensures accurate geological and biological identification",
-              color: "text-[#714a34]",
-              bg: "bg-[#f0e8db]",
-            },
-            {
-              icon: Clock,
-              title: "Time-Travel Imagery",
-              desc: "AI-generated views of ancient landscapes and future projections",
-              color: "text-[#2c6b3e]",
-              bg: "bg-[#dcedde]",
-            },
-            {
-              icon: Mic,
-              title: "Voice Narration & Q&A",
-              desc: "Listen to the story and ask follow-up questions by voice",
-              color: "text-[#1b4f8a]",
-              bg: "bg-[#dce8f5]",
-            },
-          ].map((feat) => (
-            <div
-              key={feat.title}
-              className="p-5 rounded-2xl bg-white border border-[#e8e0d4] shadow-sm"
-            >
-              <div
-                className={`w-10 h-10 rounded-xl ${feat.bg} flex items-center justify-center mb-3`}
-              >
-                <feat.icon className={`w-5 h-5 ${feat.color}`} />
-              </div>
-              <p className="text-sm font-semibold text-[#331f16] mb-1">
-                {feat.title}
-              </p>
-              <p className="text-xs text-[#8a7a66] leading-relaxed">
-                {feat.desc}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
+      {/* ── Public Story Gallery ── */}
+      <section className="max-w-4xl mx-auto px-4 sm:px-6 pb-16">
+        <h3 className="text-center text-[10px] text-[#8a7a66] uppercase tracking-[0.2em] font-bold mb-2">
+          Trail Stories
+        </h3>
+        <p className="text-center text-xs text-[#b5a48a] mb-8">
+          Explorations from hikers around the world
+        </p>
 
-      {/* ── Previous Stories Archive ── */}
-      <section className="max-w-3xl mx-auto px-4 sm:px-6 pb-16">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-[10px] text-[#8a7a66] uppercase tracking-[0.2em] font-bold">
-            Previous Explorations
-          </h3>
-          {archive.length > 0 && (
-            <button
-              onClick={onClearArchive}
-              className="text-xs text-[#8a7a66] hover:text-red-600 flex items-center gap-1 transition-colors"
-            >
-              <Trash2 className="w-3 h-3" />
-              Clear All
-            </button>
-          )}
-        </div>
-
-        {archive.length === 0 ? (
+        {publicStories.length === 0 ? (
           <div className="text-center py-12 bg-white border border-[#e8e0d4] rounded-2xl">
             <Mountain className="w-8 h-8 text-[#cdb389] mx-auto mb-3" />
             <p className="text-sm text-[#8a7a66]">No stories yet</p>
             <p className="text-xs text-[#cdb389] mt-1">
-              Upload a trail photo to start your first exploration
+              Be the first — upload a trail photo to share your exploration
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {archive.map((entry) => {
-              const firstNarration = entry.story.find(
-                (s) => s.type === "narration"
-              );
-              const narrationData =
-                firstNarration?.type === "narration"
-                  ? firstNarration.data
-                  : null;
-              const identification = narrationData
-                ? parseId(narrationData.identification)
-                : null;
-              const snippet = narrationData
-                ? narrationData.narration.slice(0, 120) +
-                  (narrationData.narration.length > 120 ? "..." : "")
-                : "";
+          <div className="space-y-6">
+            {publicStories.map((story) => {
+              const identification = parseId(story.identification);
+              const isExpanded = expandedStory === story.id;
+              const tab = activeTab[story.id] || "past";
 
               return (
-                <button
-                  key={entry.id}
-                  onClick={() => onRestoreSession(entry)}
-                  className="text-left bg-white border border-[#e8e0d4] rounded-2xl overflow-hidden hover:shadow-md transition-all group"
+                <article
+                  key={story.id}
+                  className="bg-white border border-[#e8e0d4] rounded-2xl overflow-hidden shadow-sm"
                 >
-                  {narrationData?.uploadedImage && (
-                    <div className="relative h-36 overflow-hidden">
-                      <img
-                        src={narrationData.uploadedImage}
-                        alt={entry.trailName || "Trail photo"}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                      {narrationData.era && (
-                        <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[10px] font-semibold text-[#714a34] px-2 py-0.5 rounded">
-                          {narrationData.era}
+                  {/* Images */}
+                  {(story.past_image || story.future_image) && (
+                    <div>
+                      <div className="flex border-b border-[#e8e0d4]">
+                        {story.past_image && (
+                          <button
+                            onClick={() => setActiveTab((p) => ({ ...p, [story.id]: "past" }))}
+                            className={`flex-1 py-2 text-xs font-semibold transition-colors ${
+                              tab === "past"
+                                ? "text-[#714a34] border-b-2 border-[#714a34]"
+                                : "text-[#b5a48a] hover:text-[#8a7a66]"
+                            }`}
+                          >
+                            <Clock className="w-3 h-3 inline mr-1" />
+                            Ancient Past
+                          </button>
+                        )}
+                        {story.future_image && (
+                          <button
+                            onClick={() => setActiveTab((p) => ({ ...p, [story.id]: "future" }))}
+                            className={`flex-1 py-2 text-xs font-semibold transition-colors ${
+                              tab === "future"
+                                ? "text-[#2c6b3e] border-b-2 border-[#2c6b3e]"
+                                : "text-[#b5a48a] hover:text-[#8a7a66]"
+                            }`}
+                          >
+                            <Sparkles className="w-3 h-3 inline mr-1" />
+                            Future
+                          </button>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <img
+                          src={`data:image/png;base64,${tab === "past" ? story.past_image : story.future_image}`}
+                          alt={tab === "past" ? story.past_caption : story.future_caption}
+                          className="w-full h-64 sm:h-80 object-cover"
+                        />
+                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent p-4">
+                          <p className="text-white text-xs leading-relaxed">
+                            {tab === "past" ? story.past_caption : story.future_caption}
+                          </p>
                         </div>
-                      )}
+                      </div>
                     </div>
                   )}
-                  <div className="p-4">
-                    <p className="text-sm font-semibold text-[#331f16] mb-1 flex items-center gap-1.5">
-                      <MapPin className="w-3 h-3 text-[#2c6b3e] shrink-0" />
-                      {entry.trailName ||
-                        identification?.location_name ||
-                        "Trail Exploration"}
+
+                  {/* Content */}
+                  <div className="p-5">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <h4 className="text-base font-semibold text-[#331f16] flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-[#2c6b3e] shrink-0" />
+                          {story.location_name || story.trail_name}
+                        </h4>
+                        {story.era && (
+                          <span className="inline-block mt-1 text-[10px] font-semibold text-[#714a34] bg-[#f0e8db] px-2 py-0.5 rounded">
+                            {story.era}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-[#cdb389] shrink-0">
+                        {new Date(story.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+
+                    <p className="text-sm text-[#5a4a3a] leading-relaxed whitespace-pre-line">
+                      {isExpanded
+                        ? story.narration
+                        : story.narration.slice(0, 250) +
+                          (story.narration.length > 250 ? "..." : "")}
                     </p>
-                    {snippet && (
-                      <p className="text-xs text-[#8a7a66] leading-relaxed line-clamp-2">
-                        {snippet}
-                      </p>
+                    {story.narration.length > 250 && (
+                      <button
+                        onClick={() =>
+                          setExpandedStory(isExpanded ? null : story.id)
+                        }
+                        className="mt-2 text-xs font-semibold text-[#2c6b3e] hover:underline"
+                      >
+                        {isExpanded ? "Show less" : "Read full story"}
+                      </button>
                     )}
-                    <p className="text-[10px] text-[#cdb389] mt-2">
-                      {new Date(entry.savedAt).toLocaleDateString()}
-                    </p>
                   </div>
-                </button>
+                </article>
               );
             })}
           </div>
