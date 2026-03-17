@@ -55,9 +55,8 @@ graph LR
     API --> NAR
     API --> TTS
 
-    NAR -- Identify location --> FLASH
+    NAR -- Identify + Narrate --> FLASH
     NAR -- Verify facts --> SEARCH
-    NAR -- Generate narration --> FLASH
     NAR -- Time-travel image --> IMG
     NAR -- Future projection --> IMG
     NAR -- Follow-up Q&A --> FLASH
@@ -78,12 +77,10 @@ sequenceDiagram
     U->>F: Upload trail photo
     F->>B: POST /api/narrate (image)
 
-    Note over B,G: Phase 1: Fast Path (~10-15s)
-    B->>G: Identify location (Search grounding)
-    G-->>B: Location data + verification
-    B->>G: Generate narration
-    G-->>B: Ranger's story
-    B-->>F: {narration, identification, era}
+    Note over B,G: Phase 1: Fast Path (~15-25s)
+    B->>G: Single call: Identify + Narrate (Search grounding)
+    G-->>B: {narration, identification, era}
+    B-->>F: Return combined result
     F->>U: Show narration card immediately
 
     Note over F,G: Phase 2: Past Image (~30s)
@@ -119,7 +116,8 @@ sequenceDiagram
 
 - **Google Search Grounding** — Ranger doesn't guess. Location identification is verified against Google Search for accuracy, with grounding sources logged.
 - **Interleaved Multimodal Output** — Time-travel and future images use Gemini's interleaved `TEXT + IMAGE` response modality for rich mixed-media generation.
-- **Progressive Reveal** — Narration appears in ~10s; images generate in the background and pop in with toast notifications.
+- **Single-Call Narration** — Identification and narration are combined into one optimized Gemini call with Search grounding (~15-25s instead of ~50-60s with two sequential calls).
+- **Progressive Reveal** — Narration appears in ~15-25s; images generate in the background and pop in with toast notifications.
 - **EXIF GPS Extraction** — When photos contain GPS coordinates, Ranger uses them to pinpoint the exact location.
 - **HEIC/HEIF Support** — Native iPhone photo format support with automatic conversion.
 - **Session Continuity** — Upload multiple trail photos and Ranger weaves a connected story across your hike.
@@ -157,7 +155,7 @@ trail-narrator/
 
 | Endpoint | Method | Description | Response Time |
 |----------|--------|-------------|---------------|
-| `/api/narrate` | POST | Upload photo → get narration + identification | ~10-15s |
+| `/api/narrate` | POST | Upload photo → get narration + identification | ~15-25s |
 | `/api/generate-past-image` | POST | Generate time-travel past image | ~30-60s |
 | `/api/generate-future-image` | POST | Generate future projection image | ~30-60s |
 | `/api/followup` | POST | Ask Ranger a follow-up question | ~3-5s |
@@ -258,8 +256,8 @@ chmod +x deploy.sh
 
 | Model | Feature | Usage |
 |-------|---------|-------|
-| `gemini-2.5-flash` | Text generation + Google Search grounding | Location identification with verified sources |
-| `gemini-2.5-flash` | Text generation | Narration writing, follow-up Q&A |
+| `gemini-2.5-flash` | Text generation + Google Search grounding | Combined location identification + narration in single call |
+| `gemini-2.5-flash` | Text generation | Follow-up Q&A, image era planning |
 | `gemini-3-pro-image-preview` | **Interleaved TEXT + IMAGE output** | Time-travel and future image generation |
 | `gemini-2.5-flash-preview-tts` | Text-to-speech | Natural voice narration |
 
