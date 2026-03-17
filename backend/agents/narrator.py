@@ -209,21 +209,97 @@ async def identify_and_narrate(
     previous_narration: Optional[str] = None,
 ) -> dict:
     """
-    Fast path: Analyze trail photo → Identify location → Generate narration.
-    Returns narration + identification without generating any images (~10-15s).
+    Fast path: Single Gemini call with Search grounding to identify AND narrate.
+    Returns narration + identification (~15-25s instead of ~50-60s).
     """
+    import asyncio
+
     image = _open_and_prepare_image(image_bytes)
 
     gps_context = _extract_gps(image)
     if gps_context:
         print(f"[GPS] Extracted: {gps_context}")
 
-    identification = await _identify_location(image, gps_context, trail_context)
-    identification_json = json.dumps(identification)
-    era = identification.get("geological_era", "")
-    print(f"[Identification] {identification.get('location_name', 'Unknown')} — confidence: {identification.get('confidence', '?')}", flush=True)
+    context_parts = []
+    if gps_context:
+        context_parts.append(f"The photo has embedded {gps_context}.")
+    if trail_context:
+        context_parts.append(f"The user says this is from: {trail_context}")
+    extra_context = "\n".join(context_parts)
 
-    narration_text = await _generate_narration(image, identification, previous_narration)
+    continuation = ""
+    if previous_narration:
+        continuation = f"\nYou are continuing a trail story. Previous narration (connect naturally, don't repeat): {previous_narration[-400:]}"
+
+    # Single combined call with Google Search grounding
+    response = await client.aio.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[
+            image,
+            f"""{RANGER_SYSTEM_PROMPT}
+
+{extra_context}
+{continuation}
+
+Use Google Search to verify the location. Then do TWO things:
+
+1. IDENTIFY: Figure out exactly what and where this is.
+2. NARRATE: Write the Ranger narration (2 short paragraphs + closing line, MAX 150 words).
+
+Respond with ONLY this JSON (no markdown, no code fences):
+{{"location_name": "Specific Name, Park, State/Country",
+ "location_type": "e.g. rocky coastline, canyon, alpine meadow",
+ "rock_types": ["granite", "sandstone"],
+ "geological_era": "Devonian (400 MYA)",
+ "key_features": ["glacial scouring", "sea stacks"],
+ "flora": ["Douglas fir", "manzanita"],
+ "fauna_signs": ["osprey nest"],
+ "fun_fact": "One surprising, specific, numbers-driven fact about this place",
+ "confidence": "high/medium/low",
+ "narration": "Your full Ranger narration here. Two paragraphs + closing line."}}""",
+        ],
+        config=types.GenerateContentConfig(
+            tools=[types.Tool(google_search=types.GoogleSearch())],
+        ),
+    )
+
+    # Extract grounding sources
+    web_sources = []
+    try:
+        gm = response.candidates[0].grounding_metadata
+        if gm and gm.grounding_chunks:
+            for chunk in gm.grounding_chunks:
+                if chunk.web:
+                    web_sources.append({"title": chunk.web.title, "uri": chunk.web.uri})
+        if gm and gm.web_search_queries:
+            print(f"[Grounding] Search queries: {gm.web_search_queries}")
+    except Exception:
+        pass
+    if web_sources:
+        print(f"[Grounding] Sources: {[s['title'] for s in web_sources]}")
+
+    # Parse combined response
+    raw = response.text.strip().replace("```json", "").replace("```", "").strip()
+    try:
+        result = json.loads(raw)
+    except Exception:
+        # Fallback: run the old two-step pipeline
+        print("[Combined] JSON parse failed, falling back to two-step pipeline", flush=True)
+        identification = await _identify_location(image, gps_context, trail_context)
+        narration_text = await _generate_narration(image, identification, previous_narration)
+        identification["web_sources"] = web_sources
+        return {
+            "narration": narration_text,
+            "identification": json.dumps(identification),
+            "era": identification.get("geological_era", ""),
+        }
+
+    narration_text = result.pop("narration", "")
+    result["web_sources"] = web_sources
+    identification_json = json.dumps(result)
+    era = result.get("geological_era", "")
+
+    print(f"[Combined] {result.get('location_name', 'Unknown')} — confidence: {result.get('confidence', '?')}", flush=True)
     print("[Narration] Done", flush=True)
 
     return {
