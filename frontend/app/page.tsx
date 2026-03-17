@@ -975,18 +975,14 @@ function LandingPage({
 
                     {/* Caption */}
                     {heroCaption && (
-                      <p className="text-[11px] text-[#8a7a66] italic leading-relaxed mb-3 line-clamp-2">
+                      <p className="text-[11px] text-[#8a7a66] italic leading-relaxed mb-3">
                         {heroCaption}
                       </p>
                     )}
 
-                    {/* Narration text */}
+                    {/* Full narration text */}
                     <p className="text-[13px] text-[#5a4a3a] leading-relaxed whitespace-pre-line">
-                      {(isExpanded
-                        ? story.narration
-                        : story.narration.slice(0, 180) +
-                          (story.narration.length > 180 ? "..." : "")
-                      )
+                      {story.narration
                         .split(/(\*\*[^*]+\*\*)/)
                         .map((seg: string, j: number) =>
                           seg.startsWith("**") && seg.endsWith("**") ? (
@@ -998,16 +994,21 @@ function LandingPage({
                           )
                         )}
                     </p>
-                    {story.narration.length > 180 && (
-                      <button
-                        onClick={() =>
-                          setExpandedStory(isExpanded ? null : story.id)
-                        }
-                        className="mt-2 text-xs font-semibold text-[#2c6b3e] hover:underline"
-                      >
-                        {isExpanded ? "Show less" : "Read full story"}
-                      </button>
-                    )}
+
+                    {/* Did You Know fact */}
+                    {(() => {
+                      try {
+                        const id = JSON.parse(story.identification);
+                        const fact = id.fun_fact || id.did_you_know || id.interesting_fact;
+                        if (fact) return (
+                          <div className="mt-3 p-3 bg-[#f7f3ec] rounded-xl border border-[#e8e0d4]">
+                            <p className="text-[11px] font-semibold text-[#714a34] mb-1">Did you know?</p>
+                            <p className="text-[12px] text-[#5a4a3a] leading-relaxed">{fact}</p>
+                          </div>
+                        );
+                      } catch {}
+                      return null;
+                    })()}
                   </div>
                 </article>
               );
