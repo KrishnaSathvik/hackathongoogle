@@ -974,10 +974,21 @@ function LandingPage({
                     </div>
 
                     <p className="text-sm text-[#5a4a3a] leading-relaxed whitespace-pre-line">
-                      {isExpanded
+                      {(isExpanded
                         ? story.narration
                         : story.narration.slice(0, 250) +
-                          (story.narration.length > 250 ? "..." : "")}
+                          (story.narration.length > 250 ? "..." : "")
+                      )
+                        .split(/(\*\*[^*]+\*\*)/)
+                        .map((seg: string, j: number) =>
+                          seg.startsWith("**") && seg.endsWith("**") ? (
+                            <strong key={j} className="font-semibold text-[#714a34]">
+                              {seg.slice(2, -2)}
+                            </strong>
+                          ) : (
+                            <span key={j}>{seg}</span>
+                          )
+                        )}
                     </p>
                     {story.narration.length > 250 && (
                       <button
