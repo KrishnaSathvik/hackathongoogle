@@ -4,17 +4,57 @@ Main application entry point
 """
 
 import os
+import json
 import uuid
 from io import BytesIO
+from datetime import datetime
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from google.cloud import storage as gcs
 
 from agents.narrator import analyze_and_narrate, answer_followup, identify_and_narrate, generate_past_image, generate_future_image
 
 load_dotenv()
+
+# ─── GCS-backed story persistence ─────────────────────────────
+STORIES_BUCKET = os.getenv("STORIES_BUCKET", "trail-narrator-stories")
+STORIES_BLOB = "public_stories.json"
+
+_gcs_client = None
+
+def _get_gcs_bucket():
+    global _gcs_client
+    try:
+        if _gcs_client is None:
+            _gcs_client = gcs.Client()
+        return _gcs_client.bucket(STORIES_BUCKET)
+    except Exception as e:
+        print(f"[GCS] Could not connect to bucket: {e}")
+        return None
+
+def _load_stories_from_gcs() -> list:
+    bucket = _get_gcs_bucket()
+    if not bucket:
+        return []
+    blob = bucket.blob(STORIES_BLOB)
+    try:
+        data = blob.download_as_text()
+        return json.loads(data)
+    except Exception:
+        return []
+
+def _save_stories_to_gcs(stories: list):
+    bucket = _get_gcs_bucket()
+    if not bucket:
+        return
+    blob = bucket.blob(STORIES_BLOB)
+    try:
+        blob.upload_from_string(json.dumps(stories), content_type="application/json")
+    except Exception as e:
+        print(f"[GCS] Failed to save stories: {e}")
 
 app = FastAPI(
     title="Trail Narrator",
@@ -34,8 +74,8 @@ app.add_middleware(
 # In-memory session store (swap for Firestore in production)
 sessions: dict = {}
 
-# Public story gallery (in-memory, most recent first)
-public_stories: list = []
+# Public story gallery (loaded from GCS on startup, most recent first)
+public_stories: list = _load_stories_from_gcs()
 
 
 class FollowUpRequest(BaseModel):
@@ -277,17 +317,15 @@ async def get_public_stories():
 
 @app.delete("/api/stories")
 async def clear_public_stories():
-    """Clear all public stories."""
+    """Clear all public stories (also clears GCS)."""
     public_stories.clear()
+    _save_stories_to_gcs(public_stories)
     return {"status": "cleared"}
 
 
 @app.post("/api/stories")
 async def publish_story(request: PublishStoryRequest):
-    """Save a completed story to the public gallery."""
-    import json
-    from datetime import datetime
-
+    """Save a completed story to the public gallery (persisted to GCS)."""
     # Parse location name from identification
     location_name = request.trail_name
     try:
@@ -313,6 +351,8 @@ async def publish_story(request: PublishStoryRequest):
     # Keep max 50 stories
     if len(public_stories) > 50:
         public_stories.pop()
+    # Persist to GCS
+    _save_stories_to_gcs(public_stories)
     return {"id": story["id"], "status": "published"}
 
 

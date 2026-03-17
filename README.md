@@ -110,7 +110,9 @@ sequenceDiagram
 | **AI — Text** | Gemini 2.5 Flash + Google Search Grounding | Location ID, narration, Q&A |
 | **AI — Image** | Gemini 3 Pro Image Preview | Interleaved text + image generation |
 | **AI — Voice** | Gemini 2.5 Flash TTS | Natural voice narration synthesis |
+| **Storage** | Google Cloud Storage | Persistent story gallery |
 | **Hosting** | Google Cloud Run (backend), Vercel (frontend) | Serverless, auto-scaling |
+| **Analytics** | Vercel Analytics | Usage tracking |
 | **IaC** | gcloud deploy scripts | Automated Cloud Run deployment |
 
 ## Key Features
@@ -123,26 +125,30 @@ sequenceDiagram
 - **Session Continuity** — Upload multiple trail photos and Ranger weaves a connected story across your hike.
 - **Voice Interaction** — Ask follow-up questions by voice (Web Speech API) and hear Ranger's narration (Gemini TTS).
 - **Chatbot-Style Q&A** — Questions appear instantly with typing indicators; answers stream in naturally.
+- **Public Story Gallery** — Every narration is auto-published to a shared gallery so visitors can browse geological stories from trails worldwide, persisted via Google Cloud Storage.
+- **Mobile-Optimized** — Responsive design with separate camera/file picker inputs for mobile devices. HEIC/HEIF iPhone photos auto-converted.
+- **TTS Audio Caching** — Voice narration is cached client-side to avoid re-fetching on repeated plays.
 
 ## Project Structure
 
 ```
 trail-narrator/
 ├── backend/
-│   ├── main.py                  # FastAPI app — 7 endpoints
+│   ├── main.py                  # FastAPI app — 9 endpoints (narrate, images, TTS, stories, followup)
 │   ├── agents/
 │   │   └── narrator.py          # Core AI pipeline (identify → narrate → image gen)
 │   ├── Dockerfile               # Python 3.11 slim container
 │   └── requirements.txt
 ├── frontend/
 │   ├── app/
-│   │   ├── page.tsx             # Main React component (progressive narration UI)
-│   │   ├── layout.tsx           # Root layout with Google Fonts
+│   │   ├── page.tsx             # Main React component (landing, explore, narration views)
+│   │   ├── layout.tsx           # Root layout with Google Fonts + Vercel Analytics
 │   │   └── globals.css          # Custom animations and styling
 │   ├── tailwind.config.ts
 │   └── package.json
 ├── infra/
 │   └── deploy.sh                # Cloud Run deployment automation
+├── architecture.png             # System architecture diagram
 ├── CLAUDE.md                    # AI agent instructions
 └── README.md
 ```
@@ -156,6 +162,8 @@ trail-narrator/
 | `/api/generate-future-image` | POST | Generate future projection image | ~30-60s |
 | `/api/followup` | POST | Ask Ranger a follow-up question | ~3-5s |
 | `/api/tts` | POST | Convert narration text to speech | ~5-10s |
+| `/api/stories` | GET | Retrieve public story gallery | instant |
+| `/api/stories` | POST | Publish a story to the gallery | instant |
 | `/health` | GET | Health check | instant |
 
 ## Quick Start
@@ -215,7 +223,7 @@ gcloud run deploy trail-narrator-api \
   --source . \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars="GEMINI_API_KEY=your-key" \
+  --set-env-vars="GEMINI_API_KEY=your-key,STORIES_BUCKET=trail-narrator-stories" \
   --timeout=300 \
   --memory=1Gi
 ```
@@ -242,6 +250,7 @@ chmod +x deploy.sh
 
 - **Cloud Run** — Serverless backend hosting with auto-scaling (0-10 instances)
 - **Cloud Build** — Container image building from source
+- **Cloud Storage** — Persistent storage for the public story gallery
 - **Artifact Registry** — Container image storage
 - **Gemini API** — AI model access (Flash, Pro Image, TTS)
 
