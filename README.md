@@ -26,48 +26,42 @@ Upload multiple photos from the same trail, and Ranger weaves them into a **cont
 ![Trail Narrator System Architecture](architecture.png)
 
 ```mermaid
-graph TB
-    subgraph Frontend["Frontend — Next.js on Vercel"]
-        UI[React UI<br/>Photo Upload / Story View / Voice I/O]
-        LS[LocalStorage<br/>Session Persistence]
+graph LR
+    subgraph Frontend[Frontend - Next.js on Vercel]
+        UI[React UI]
+        LS[LocalStorage]
     end
 
-    subgraph Backend["Backend — FastAPI on Google Cloud Run"]
+    subgraph Backend[Backend - FastAPI on Cloud Run]
         API[FastAPI Server]
         NAR[Narrator Agent]
         TTS[TTS Engine]
-        SES[Session Store]
     end
 
-    subgraph Gemini["Google Gemini AI Models"]
-        FLASH[Gemini 2.5 Flash<br/>Identification + Narration + Q&A]
-        IMG[Gemini 3 Pro Image<br/>Interleaved Text + Image Output]
-        VOICE[Gemini 2.5 Flash TTS<br/>Voice Synthesis]
-        SEARCH[Google Search<br/>Grounding API]
+    subgraph Gemini[Google Gemini AI]
+        FLASH[Gemini 2.5 Flash]
+        IMG[Gemini 3 Pro Image]
+        VOICE[Gemini TTS]
+        SEARCH[Google Search]
     end
 
-    UI -->|"POST /api/narrate<br/>(image upload)"| API
-    UI -->|"POST /api/generate-past-image"| API
-    UI -->|"POST /api/generate-future-image"| API
-    UI -->|"POST /api/followup"| API
-    UI -->|"POST /api/tts"| API
+    UI -- /api/narrate --> API
+    UI -- /api/generate-past-image --> API
+    UI -- /api/generate-future-image --> API
+    UI -- /api/followup --> API
+    UI -- /api/tts --> API
     UI <--> LS
 
     API --> NAR
     API --> TTS
-    API <--> SES
 
-    NAR -->|"Identify location"| FLASH
-    NAR -->|"Verify with search"| SEARCH
-    NAR -->|"Generate narration"| FLASH
-    NAR -->|"Time-travel imagery"| IMG
-    NAR -->|"Future projection"| IMG
-    NAR -->|"Follow-up Q&A"| FLASH
-    TTS -->|"Text-to-speech"| VOICE
-
-    style Frontend fill:#dcedde,stroke:#2c6b3e,color:#1a3924
-    style Backend fill:#f0e8db,stroke:#714a34,color:#331f16
-    style Gemini fill:#c3dbfa,stroke:#1b4f8a,color:#1b274f
+    NAR -- Identify location --> FLASH
+    NAR -- Verify facts --> SEARCH
+    NAR -- Generate narration --> FLASH
+    NAR -- Time-travel image --> IMG
+    NAR -- Future projection --> IMG
+    NAR -- Follow-up Q&A --> FLASH
+    TTS -- Voice synthesis --> VOICE
 ```
 
 ### Progressive Narration Flow
