@@ -880,104 +880,122 @@ function LandingPage({
       </section>
 
       {/* ── Public Story Gallery ── */}
-      <section className="max-w-4xl mx-auto px-4 sm:px-6 pb-16">
+      <section className="max-w-5xl mx-auto px-4 sm:px-6 pb-16">
         <h3 className="text-center text-[10px] text-[#8a7a66] uppercase tracking-[0.2em] font-bold mb-2">
           Trail Stories
         </h3>
-        <p className="text-center text-xs text-[#b5a48a] mb-8">
+        <p className="text-center text-xs text-[#b5a48a] mb-10">
           Explorations from hikers around the world
         </p>
 
         {publicStories.length === 0 ? (
-          <div className="text-center py-12 bg-white border border-[#e8e0d4] rounded-2xl">
-            <Mountain className="w-8 h-8 text-[#cdb389] mx-auto mb-3" />
+          <div className="text-center py-16 bg-white border border-[#e8e0d4] rounded-2xl">
+            <Mountain className="w-10 h-10 text-[#cdb389] mx-auto mb-4" />
             <p className="text-sm text-[#8a7a66]">No stories yet</p>
             <p className="text-xs text-[#cdb389] mt-1">
               Be the first — upload a trail photo to share your exploration
             </p>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {publicStories.map((story) => {
-              const identification = parseId(story.identification);
               const isExpanded = expandedStory === story.id;
               const tab = activeTab[story.id] || "past";
+              const heroImage = tab === "past" ? story.past_image : story.future_image;
+              const heroCaption = tab === "past" ? story.past_caption : story.future_caption;
 
               return (
                 <article
                   key={story.id}
-                  className="bg-white border border-[#e8e0d4] rounded-2xl overflow-hidden shadow-sm"
+                  className="bg-white border border-[#e8e0d4] rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow group"
                 >
-                  {/* Images */}
+                  {/* Hero image with overlays */}
                   {(story.past_image || story.future_image) && (
-                    <div>
-                      <div className="flex border-b border-[#e8e0d4]">
-                        {story.past_image && (
+                    <div className="relative">
+                      <img
+                        src={`data:image/png;base64,${heroImage}`}
+                        alt={heroCaption}
+                        className="w-full h-56 sm:h-64 object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                      />
+                      {/* Dark gradient overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent pointer-events-none" />
+
+                      {/* Location name overlay */}
+                      <div className="absolute bottom-3 left-3 right-3">
+                        <h4 className="text-white font-semibold text-sm flex items-center gap-1.5 drop-shadow-lg">
+                          <MapPin className="w-3.5 h-3.5 shrink-0" />
+                          {story.location_name || story.trail_name}
+                        </h4>
+                      </div>
+
+                      {/* Era badge top-left */}
+                      {story.era && (
+                        <span className="absolute top-3 left-3 text-[9px] font-bold text-white bg-black/40 backdrop-blur-sm px-2 py-1 rounded-full">
+                          {story.era}
+                        </span>
+                      )}
+
+                      {/* Past/Future toggle top-right */}
+                      {story.past_image && story.future_image && (
+                        <div className="absolute top-3 right-3 flex bg-black/40 backdrop-blur-sm rounded-full overflow-hidden">
                           <button
                             onClick={() => setActiveTab((p) => ({ ...p, [story.id]: "past" }))}
-                            className={`flex-1 py-2 text-xs font-semibold transition-colors ${
+                            className={`px-2.5 py-1 text-[10px] font-semibold transition-colors ${
                               tab === "past"
-                                ? "text-[#714a34] border-b-2 border-[#714a34]"
-                                : "text-[#b5a48a] hover:text-[#8a7a66]"
+                                ? "bg-white/20 text-white"
+                                : "text-white/60 hover:text-white"
                             }`}
                           >
-                            <Clock className="w-3 h-3 inline mr-1" />
-                            Ancient Past
+                            Past
                           </button>
-                        )}
-                        {story.future_image && (
                           <button
                             onClick={() => setActiveTab((p) => ({ ...p, [story.id]: "future" }))}
-                            className={`flex-1 py-2 text-xs font-semibold transition-colors ${
+                            className={`px-2.5 py-1 text-[10px] font-semibold transition-colors ${
                               tab === "future"
-                                ? "text-[#2c6b3e] border-b-2 border-[#2c6b3e]"
-                                : "text-[#b5a48a] hover:text-[#8a7a66]"
+                                ? "bg-white/20 text-white"
+                                : "text-white/60 hover:text-white"
                             }`}
                           >
-                            <Sparkles className="w-3 h-3 inline mr-1" />
                             Future
                           </button>
-                        )}
-                      </div>
-                      <div className="relative">
-                        <img
-                          src={`data:image/png;base64,${tab === "past" ? story.past_image : story.future_image}`}
-                          alt={tab === "past" ? story.past_caption : story.future_caption}
-                          className="w-full h-64 sm:h-80 object-cover"
-                        />
-                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent p-4">
-                          <p className="text-white text-xs leading-relaxed">
-                            {tab === "past" ? story.past_caption : story.future_caption}
-                          </p>
                         </div>
-                      </div>
+                      )}
+
+                      {/* Date top-right (if no toggle) */}
+                      {!(story.past_image && story.future_image) && (
+                        <span className="absolute top-3 right-3 text-[9px] font-semibold text-white/70 bg-black/30 backdrop-blur-sm px-2 py-1 rounded-full">
+                          {new Date(story.created_at).toLocaleDateString()}
+                        </span>
+                      )}
                     </div>
                   )}
 
-                  {/* Content */}
-                  <div className="p-5">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <h4 className="text-base font-semibold text-[#331f16] flex items-center gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 text-[#2c6b3e] shrink-0" />
-                          {story.location_name || story.trail_name}
-                        </h4>
-                        {story.era && (
-                          <span className="inline-block mt-1 text-[10px] font-semibold text-[#714a34] bg-[#f0e8db] px-2 py-0.5 rounded">
-                            {story.era}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-[#cdb389] shrink-0">
-                        {new Date(story.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
+                  {/* Caption + narration */}
+                  <div className="p-4">
+                    {/* Caption */}
+                    {heroCaption && (
+                      <p className="text-[11px] text-[#8a7a66] italic leading-relaxed mb-3 line-clamp-2">
+                        {heroCaption}
+                      </p>
+                    )}
 
-                    <p className="text-sm text-[#5a4a3a] leading-relaxed whitespace-pre-line">
+                    {/* Date row (when images present) */}
+                    {(story.past_image || story.future_image) && (
+                      <span className="text-[9px] text-[#cdb389] block mb-2">
+                        {new Date(story.created_at).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </span>
+                    )}
+
+                    {/* Narration text */}
+                    <p className="text-[13px] text-[#5a4a3a] leading-relaxed whitespace-pre-line">
                       {(isExpanded
                         ? story.narration
-                        : story.narration.slice(0, 250) +
-                          (story.narration.length > 250 ? "..." : "")
+                        : story.narration.slice(0, 180) +
+                          (story.narration.length > 180 ? "..." : "")
                       )
                         .split(/(\*\*[^*]+\*\*)/)
                         .map((seg: string, j: number) =>
@@ -990,7 +1008,7 @@ function LandingPage({
                           )
                         )}
                     </p>
-                    {story.narration.length > 250 && (
+                    {story.narration.length > 180 && (
                       <button
                         onClick={() =>
                           setExpandedStory(isExpanded ? null : story.id)
