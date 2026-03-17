@@ -909,85 +909,74 @@ function LandingPage({
                   key={story.id}
                   className="bg-white border border-[#e8e0d4] rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow group"
                 >
-                  {/* Hero image with overlays */}
+                  {/* Clean hero image — no text overlays */}
                   {(story.past_image || story.future_image) && (
-                    <div className="relative">
+                    <div className="relative overflow-hidden">
                       <img
                         src={`data:image/png;base64,${heroImage}`}
                         alt={heroCaption}
                         className="w-full h-56 sm:h-64 object-cover group-hover:scale-[1.02] transition-transform duration-500"
                       />
-                      {/* Dark gradient overlay */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent pointer-events-none" />
-
-                      {/* Location name overlay */}
-                      <div className="absolute bottom-3 left-3 right-3">
-                        <h4 className="text-white font-semibold text-sm flex items-center gap-1.5 drop-shadow-lg">
-                          <MapPin className="w-3.5 h-3.5 shrink-0" />
-                          {story.location_name || story.trail_name}
-                        </h4>
-                      </div>
-
-                      {/* Era badge top-left */}
-                      {story.era && (
-                        <span className="absolute top-3 left-3 text-[9px] font-bold text-white bg-black/40 backdrop-blur-sm px-2 py-1 rounded-full">
-                          {story.era}
-                        </span>
-                      )}
-
-                      {/* Past/Future toggle top-right */}
-                      {story.past_image && story.future_image && (
-                        <div className="absolute top-3 right-3 flex bg-black/40 backdrop-blur-sm rounded-full overflow-hidden">
-                          <button
-                            onClick={() => setActiveTab((p) => ({ ...p, [story.id]: "past" }))}
-                            className={`px-2.5 py-1 text-[10px] font-semibold transition-colors ${
-                              tab === "past"
-                                ? "bg-white/20 text-white"
-                                : "text-white/60 hover:text-white"
-                            }`}
-                          >
-                            Past
-                          </button>
-                          <button
-                            onClick={() => setActiveTab((p) => ({ ...p, [story.id]: "future" }))}
-                            className={`px-2.5 py-1 text-[10px] font-semibold transition-colors ${
-                              tab === "future"
-                                ? "bg-white/20 text-white"
-                                : "text-white/60 hover:text-white"
-                            }`}
-                          >
-                            Future
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Date top-right (if no toggle) */}
-                      {!(story.past_image && story.future_image) && (
-                        <span className="absolute top-3 right-3 text-[9px] font-semibold text-white/70 bg-black/30 backdrop-blur-sm px-2 py-1 rounded-full">
-                          {new Date(story.created_at).toLocaleDateString()}
-                        </span>
-                      )}
                     </div>
                   )}
 
-                  {/* Caption + narration */}
+                  {/* All content below image */}
                   <div className="p-4">
-                    {/* Caption */}
-                    {heroCaption && (
-                      <p className="text-[11px] text-[#8a7a66] italic leading-relaxed mb-3 line-clamp-2">
-                        {heroCaption}
-                      </p>
+                    {/* Past/Future toggle */}
+                    {story.past_image && story.future_image && (
+                      <div className="flex gap-1 mb-3">
+                        <button
+                          onClick={() => setActiveTab((p) => ({ ...p, [story.id]: "past" }))}
+                          className={`px-3 py-1 text-[10px] font-semibold rounded-full transition-colors ${
+                            tab === "past"
+                              ? "bg-[#714a34] text-white"
+                              : "bg-[#f0e8db] text-[#8a7a66] hover:bg-[#e8ddd0]"
+                          }`}
+                        >
+                          <Clock className="w-3 h-3 inline mr-1" />
+                          Ancient Past
+                        </button>
+                        <button
+                          onClick={() => setActiveTab((p) => ({ ...p, [story.id]: "future" }))}
+                          className={`px-3 py-1 text-[10px] font-semibold rounded-full transition-colors ${
+                            tab === "future"
+                              ? "bg-[#2c6b3e] text-white"
+                              : "bg-[#f0e8db] text-[#8a7a66] hover:bg-[#e8ddd0]"
+                          }`}
+                        >
+                          <Sparkles className="w-3 h-3 inline mr-1" />
+                          Future
+                        </button>
+                      </div>
                     )}
 
-                    {/* Date row (when images present) */}
-                    {(story.past_image || story.future_image) && (
-                      <span className="text-[9px] text-[#cdb389] block mb-2">
+                    {/* Location + date */}
+                    <div className="flex items-start justify-between mb-2">
+                      <h4 className="text-sm font-semibold text-[#331f16] flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-[#2c6b3e] shrink-0" />
+                        {story.location_name || story.trail_name}
+                      </h4>
+                      <span className="text-[9px] text-[#cdb389] shrink-0 mt-0.5">
                         {new Date(story.created_at).toLocaleDateString("en-US", {
                           month: "short",
                           day: "numeric",
                           year: "numeric",
                         })}
                       </span>
+                    </div>
+
+                    {/* Era badge — truncate to just the era name */}
+                    {story.era && (
+                      <span className="inline-block mb-3 text-[9px] font-bold text-[#714a34] bg-[#f0e8db] px-2 py-0.5 rounded-full max-w-full truncate">
+                        {story.era.split("(")[0].trim() || story.era.slice(0, 60)}
+                      </span>
+                    )}
+
+                    {/* Caption */}
+                    {heroCaption && (
+                      <p className="text-[11px] text-[#8a7a66] italic leading-relaxed mb-3 line-clamp-2">
+                        {heroCaption}
+                      </p>
                     )}
 
                     {/* Narration text */}
