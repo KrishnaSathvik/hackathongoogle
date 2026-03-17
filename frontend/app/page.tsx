@@ -965,11 +965,12 @@ function LandingPage({
                       </span>
                     </div>
 
-                    {/* Era badge — truncate to just the era name */}
+                    {/* Era — show full text */}
                     {story.era && (
-                      <span className="inline-block mb-3 text-[9px] font-bold text-[#714a34] bg-[#f0e8db] px-2 py-0.5 rounded-full max-w-full truncate">
-                        {story.era.split("(")[0].trim() || story.era.slice(0, 60)}
-                      </span>
+                      <p className="text-[11px] text-[#8a7a66] leading-relaxed mb-3">
+                        <span className="font-semibold text-[#714a34]">Era:</span>{" "}
+                        {story.era}
+                      </p>
                     )}
 
                     {/* Caption */}
